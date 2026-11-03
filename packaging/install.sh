@@ -16,9 +16,7 @@ done
 
 mkdir -p "$lib" "$prefix/bin" "$prefix/share/applications"
 install -m 755 "$src/sdm" "$src/sdm-host" "$lib/"
-[ -x "$src/sdm-cli" ] && install -m 755 "$src/sdm-cli" "$lib/"
 ln -sf "$lib/sdm" "$prefix/bin/sdm"
-[ -x "$lib/sdm-cli" ] && ln -sf "$lib/sdm-cli" "$prefix/bin/sdm-cli"
 
 for s in 16 32 48 64 128 256 512; do
   d="$prefix/share/icons/hicolor/${s}x${s}/apps"

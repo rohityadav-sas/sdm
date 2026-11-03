@@ -38,12 +38,10 @@ try {
         New-Item -ItemType Directory -Path $InstallDir -Force | Out-Null
         Copy-Item -LiteralPath $exe.FullName -Destination (Join-Path $InstallDir 'sdm.exe') -Force
 
-        # Also copy companion binaries if present
-        foreach ($bin in @('sdm-host.exe', 'sdm-cli.exe')) {
-            $helper = Get-ChildItem -Path (Join-Path $tmp 'out') -Filter $bin -Recurse | Select-Object -First 1
-            if ($helper) {
-                Copy-Item -LiteralPath $helper.FullName -Destination (Join-Path $InstallDir $bin) -Force
-            }
+        # Also copy companion host helper if present
+        $helper = Get-ChildItem -Path (Join-Path $tmp 'out') -Filter 'sdm-host.exe' -Recurse | Select-Object -First 1
+        if ($helper) {
+            Copy-Item -LiteralPath $helper.FullName -Destination (Join-Path $InstallDir 'sdm-host.exe') -Force
         }
     }
     finally {
@@ -63,9 +61,6 @@ catch {
             Copy-Item -Path 'target\release\sdm.exe' -Destination (Join-Path $InstallDir 'sdm.exe') -Force
             if (Test-Path 'target\release\sdm-host.exe') {
                 Copy-Item -Path 'target\release\sdm-host.exe' -Destination (Join-Path $InstallDir 'sdm-host.exe') -Force
-            }
-            if (Test-Path 'target\release\sdm-cli.exe') {
-                Copy-Item -Path 'target\release\sdm-cli.exe' -Destination (Join-Path $InstallDir 'sdm-cli.exe') -Force
             }
         }
         finally {

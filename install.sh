@@ -58,7 +58,7 @@ if [ -z "$url" ]; then
     git clone --depth 1 "https://github.com/$REPO.git" "$tmp_src" || die "failed to clone repository"
     (cd "$tmp_src" && cargo build --release) || die "build failed"
     mkdir -p "$INSTALL_DIR"
-    for b in sdm sdm-host sdm-cli; do
+    for b in sdm sdm-host; do
       if [ -f "$tmp_src/target/release/$b" ]; then
         install -m 755 "$tmp_src/target/release/$b" "$INSTALL_DIR/$b"
       fi
@@ -103,8 +103,8 @@ mkdir -p "$INSTALL_DIR"
 chmod +x "$found"
 mv -f "$found" "$INSTALL_DIR/$BIN"
 
-# Also install companion helpers if present in archive
-for h in sdm-host sdm-cli; do
+# Also install native messaging host helper if present in archive
+for h in sdm-host; do
   h_found="$(find "$tmp/out" -type f -name "$h" 2>/dev/null | head -n 1 || true)"
   if [ -n "$h_found" ]; then
     chmod +x "$h_found"

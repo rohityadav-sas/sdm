@@ -22,7 +22,7 @@ Up to 32 parallel connections · Dynamic segment splitting · Automatic resume �
 - 🧩 **Browser Integration**: Native messaging extension for Chrome, Edge, Brave, and Firefox with cookie & referer forwarding.
 - 🎨 **Adaptive UI**: Modern interface with system dark/light theme switching and low resource footprint.
 - 🚀 **Background Mode**: Downloads continue running silently when the window is closed.
-- 🖥️ **CLI Included**: Headless `sdm-cli` binary for scripting, remote servers, and speed benchmarking.
+- 🔗 **Direct URL Launch**: Pass download URLs directly from terminal or launchers (`sdm https://...`).
 
 ---
 
@@ -95,13 +95,13 @@ To remove: `packaging/uninstall.sh`. To build a Fedora RPM: `packaging/make-rpm.
 
 ---
 
-## CLI & Benchmarking
+## Direct Download & Benchmarking
 
-SDM includes a headless CLI tool (`sdm-cli`) for headless environments, testing, and benchmarking:
+Send download URLs to SDM directly from your terminal or scripts:
 
 ```sh
-# Download with 16 connections
-sdm-cli "https://example.com/largefile.iso" -c 16
+# Start download (opens SDM or passes to running background instance)
+sdm "https://example.com/largefile.iso"
 
 # Run speed benchmark against aria2 and curl
 scripts/bench.sh "https://example.com/largefile.iso" 3
@@ -113,9 +113,9 @@ scripts/bench.sh "https://example.com/largefile.iso" 3
 
 - **`crates/engine`**: Core headless HTTP/1.1 multi-range download engine.
 - **`crates/app`**: Slint-based graphical user interface and desktop integration.
-- **`crates/ipc`**: Local communication channel connecting the GUI app, CLI, and browser host.
+- **`crates/ipc`**: Local communication channel connecting the GUI app and browser host.
 - **`crates/host`**: Native messaging helper launched by browsers.
-- **`crates/cli`**: Terminal frontend for the engine.
+- **`crates/cli`**: Internal test & benchmarking harness.
 - **`extension/`**: Browser extension for Chromium & Firefox.
 
 For details, see [ARCHITECTURE.md](ARCHITECTURE.md).

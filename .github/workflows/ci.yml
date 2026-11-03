@@ -31,7 +31,7 @@ jobs:
         shell: bash
         run: |
           mkdir -p dist/sdm
-          for b in sdm sdm-host sdm-cli; do cp target/release/$b* dist/sdm/ 2>/dev/null || true; done
+          for b in sdm sdm-host; do cp target/release/$b* dist/sdm/ 2>/dev/null || true; done
           cp -r packaging README.md dist/sdm/
           cd dist && (tar -czf sdm-${{ runner.os }}.tar.gz sdm || 7z a sdm-${{ runner.os }}.zip sdm)
       - uses: actions/upload-artifact@v4

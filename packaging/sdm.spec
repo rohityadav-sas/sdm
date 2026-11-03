@@ -34,7 +34,6 @@ cargo build --release --locked
 %install
 install -Dm755 target/release/sdm       %{buildroot}%{_bindir}/sdm
 install -Dm755 target/release/sdm-host  %{buildroot}%{_bindir}/sdm-host
-install -Dm755 target/release/sdm-cli   %{buildroot}%{_bindir}/sdm-cli
 install -Dm644 packaging/sdm.desktop    %{buildroot}%{_datadir}/applications/sdm.desktop
 for s in 16 32 48 64 128 256 512; do
   install -Dm644 packaging/icons/sdm-$s.png %{buildroot}%{_datadir}/icons/hicolor/${s}x${s}/apps/sdm.png
@@ -54,7 +53,6 @@ fi
 %files
 %{_bindir}/sdm
 %{_bindir}/sdm-host
-%{_bindir}/sdm-cli
 %{_datadir}/applications/sdm.desktop
 %{_datadir}/icons/hicolor/*/apps/sdm.png
 %{_datadir}/icons/hicolor/scalable/apps/sdm.svg
