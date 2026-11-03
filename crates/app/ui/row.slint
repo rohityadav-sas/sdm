@@ -41,7 +41,6 @@ export component DownloadRow inherits Rectangle {
         background: Theme.separator;
     }
     ta := TouchArea {
-        mouse-cursor: root.done ? MouseCursor.pointer : MouseCursor.default;
         double-clicked => { if (root.done) { root.open-file(); } }
     }
 

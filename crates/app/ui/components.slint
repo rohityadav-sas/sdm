@@ -98,7 +98,6 @@ export component IconButton inherits Rectangle {
     TipArea { width: parent.width; height: parent.height; hovering: ta.has-hover; text: root.tip; align-end: root.tip-end; }
     ta := TouchArea {
         enabled: root.enabled;
-        mouse-cursor: pointer;
         clicked => { root.clicked(); }
     }
 }
@@ -134,7 +133,6 @@ export component Button inherits Rectangle {
     }
     TipArea { width: parent.width; height: parent.height; hovering: ta.has-hover; text: root.tip; }
     ta := TouchArea {
-        mouse-cursor: pointer;
         clicked => { root.clicked(); }
     }
 }
@@ -208,7 +206,6 @@ export component Toggle inherits Rectangle {
         animate x { duration: 180ms; easing: ease-out; }
     }
     TouchArea {
-        mouse-cursor: pointer;
         clicked => {
             root.checked = !root.checked;
             root.toggled(root.checked);
@@ -254,7 +251,6 @@ export component ConnSlider inherits Rectangle {
         animate x { duration: 80ms; }
     }
     ta := TouchArea {
-        mouse-cursor: pointer;
         function set-from(x: length) {
             root.value = Math.round(root.min + Math.clamp((x - 10px) / (root.width - 20px), 0, 1) * (root.max - root.min));
             root.changed(root.value);
@@ -335,7 +331,6 @@ export component SidebarItem inherits Rectangle {
         if root.badge != "" : Text { text: root.badge; color: Theme.dim; font-size: 12px; vertical-alignment: center; }
     }
     ta := TouchArea {
-        mouse-cursor: pointer;
         clicked => { root.clicked(); }
     }
 }
@@ -363,7 +358,6 @@ export component Segmented inherits Rectangle {
         animate background { duration: 140ms; }
         Text { text: opt; color: root.current == i ? Theme.fg : Theme.dim; font-size: 13px; font-weight: root.current == i ? 600 : 400; horizontal-alignment: center; vertical-alignment: center; }
         TouchArea {
-            mouse-cursor: pointer;
             clicked => { root.current = i; root.changed(i); }
         }
     }

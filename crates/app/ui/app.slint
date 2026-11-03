@@ -64,7 +64,7 @@ component MenuItem inherits Rectangle {
         VerticalLayout { alignment: center; Image { source: root.icon; colorize: Theme.fg; width: 16px; height: 16px; } }
         Text { text: root.text; color: Theme.fg; font-size: 14px; vertical-alignment: center; }
     }
-    ta := TouchArea { mouse-cursor: pointer; clicked => { root.clicked(); } }
+    ta := TouchArea { clicked => { root.clicked(); } }
 }
 
 export component MainWindow inherits Window {
