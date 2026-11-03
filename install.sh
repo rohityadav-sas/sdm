@@ -1,25 +1,11 @@
 #!/bin/sh
 # Smart Download Manager (SDM) installer for Linux and macOS
 #   curl -fsSL https://raw.githubusercontent.com/rohityadav-sas/sdm/main/install.sh | sh
-#
-# Optional environment variables:
-#   SDM_VERSION      release tag to install (default: latest), e.g. v1.0.0
-#   SDM_INSTALL_DIR  install directory (default: $HOME/.local/bin)
 set -eu
 
 REPO="rohityadav-sas/sdm"
 BIN="sdm"
-INSTALL_DIR="${SDM_INSTALL_DIR:-$HOME/.local/bin}"
-VERSION="${SDM_VERSION:-latest}"
-
-say() { printf '%s\n' "$*"; }
-die() { printf 'error: %s\n' "$*" >&2; exit 1; }
-have() { command -v "$1" >/dev/null 2>&1; }
-
-case "$INSTALL_DIR" in
-  /*) ;;
-  *) die "SDM_INSTALL_DIR must be an absolute path (got '$INSTALL_DIR')" ;;
-esac
+INSTALL_DIR="$HOME/.local/bin"
 
 # --- platform detection -----------------------------------------------------
 case "$(uname -s)" in
@@ -46,13 +32,9 @@ else
 fi
 
 # --- find the release asset -------------------------------------------------
-if [ "$VERSION" = "latest" ]; then
-  api="https://api.github.com/repos/$REPO/releases/latest"
-else
-  api="https://api.github.com/repos/$REPO/releases/tags/$VERSION"
-fi
+api="https://api.github.com/repos/$REPO/releases/latest"
 
-say "Looking up $VERSION release..."
+say "Looking up latest release..."
 release="$(fetch "$api" 2>/dev/null || true)"
 url=""
 if [ -n "$release" ]; then
@@ -157,3 +139,4 @@ case ":$PATH:" in
     fi
     ;;
 esac
+

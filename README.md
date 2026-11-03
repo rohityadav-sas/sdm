@@ -40,28 +40,10 @@ curl -fsSL https://raw.githubusercontent.com/rohityadav-sas/sdm/main/install.sh 
 irm https://raw.githubusercontent.com/rohityadav-sas/sdm/main/install.ps1 | iex
 ```
 
-| OS | Default Install Path |
+| OS | Install Path |
 | --- | --- |
 | **Linux / macOS** | `~/.local/bin/sdm` |
 | **Windows** | `%LOCALAPPDATA%\Programs\sdm\sdm.exe` |
-
----
-
-### Customizing Installation
-
-Install a specific release version or target a custom directory:
-
-**Linux / macOS:**
-```sh
-curl -fsSL https://raw.githubusercontent.com/rohityadav-sas/sdm/main/install.sh | SDM_VERSION=v1.0.0 sh
-```
-
-**Windows:**
-```powershell
-$env:SDM_VERSION = 'v1.0.0'; irm https://raw.githubusercontent.com/rohityadav-sas/sdm/main/install.ps1 | iex
-```
-
-> Set `SDM_INSTALL_DIR` to override the destination directory.
 
 ---
 

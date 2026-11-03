@@ -1,17 +1,12 @@
 # Smart Download Manager (SDM) installer for Windows (PowerShell 5.1+)
 #   irm https://raw.githubusercontent.com/rohityadav-sas/sdm/main/install.ps1 | iex
-#
-# Optional environment variables:
-#   SDM_VERSION      release tag to install (default: latest), e.g. v1.0.0
-#   SDM_INSTALL_DIR  install directory (default: %LOCALAPPDATA%\Programs\sdm)
 
 $ErrorActionPreference = 'Stop'
 $ProgressPreference = 'SilentlyContinue'
 [Net.ServicePointManager]::SecurityProtocol = [Net.ServicePointManager]::SecurityProtocol -bor [Net.SecurityProtocolType]::Tls12
 
 $Repo = 'rohityadav-sas/sdm'
-$Version = if ($env:SDM_VERSION) { $env:SDM_VERSION } else { 'latest' }
-$InstallDir = if ($env:SDM_INSTALL_DIR) { $env:SDM_INSTALL_DIR } else { Join-Path $env:LOCALAPPDATA 'Programs\sdm' }
+$InstallDir = Join-Path $env:LOCALAPPDATA 'Programs\sdm'
 $InstallDir = [IO.Path]::GetFullPath($InstallDir)
 
 $cpu = if ($env:PROCESSOR_ARCHITEW6432) { $env:PROCESSOR_ARCHITEW6432 } else { $env:PROCESSOR_ARCHITECTURE }
@@ -21,13 +16,9 @@ $arch = switch ($cpu) {
     default { throw "Unsupported architecture: $cpu" }
 }
 
-$api = if ($Version -eq 'latest') {
-    "https://api.github.com/repos/$Repo/releases/latest"
-} else {
-    "https://api.github.com/repos/$Repo/releases/tags/$Version"
-}
+$api = "https://api.github.com/repos/$Repo/releases/latest"
 
-Write-Host "Looking up $Version release..."
+Write-Host "Looking up latest release..."
 try {
     $release = Invoke-RestMethod -Uri $api -Headers @{ 'User-Agent' = 'sdm-installer' }
     $asset = $release.assets | Where-Object { $_.name -like "*windows-$arch.zip" -or $_.name -like "*windows*.zip" } | Select-Object -First 1
@@ -98,3 +89,4 @@ if ($entries -notcontains $InstallDir) {
     Write-Host "Added $InstallDir to your PATH. Restart other terminals to pick it up."
 }
 Write-Host "Run: sdm"
+
