@@ -1,11 +1,13 @@
+use slint::winit_030::{winit, WinitWindowAccessor};
 use slint::ComponentHandle;
 use std::time::Duration;
 use sdm_app::{App, Config, MainWindow};
 
 fn main() -> Result<(), slint::PlatformError> {
-    // Clear desktop startup notification ID so desktop environments / compositors
+    // Clear desktop startup notification IDs so desktop environments / compositors
     // do not keep showing a busy cursor waiting for an unhandled X11/Wayland notification.
     std::env::remove_var("DESKTOP_STARTUP_ID");
+    std::env::remove_var("XDG_ACTIVATION_TOKEN");
 
     if std::env::args().any(|a| a == "--update" || a == "-U") {
         if let Err(e) = sdm_app::update::run_cli() {
@@ -50,13 +52,16 @@ fn main() -> Result<(), slint::PlatformError> {
         }
     }
 
-    let _ = slint::set_xdg_app_id("sdm");
     let ui = MainWindow::new()?;
+    let _ = slint::set_xdg_app_id("sdm");
     let app = App::install(&ui, Config::from_system());
     if let Some(u) = url {
         app.add_url(&u);
     }
     ui.show()?;
+    ui.window().with_winit_window(|win| {
+        win.set_cursor(winit::window::CursorIcon::Default);
+    });
     // Keeps running while the window is hidden so downloads can continue in the background.
     slint::run_event_loop_until_quit()?;
     drop(app);

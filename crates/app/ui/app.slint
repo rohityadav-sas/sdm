@@ -218,7 +218,7 @@ export component MainWindow inherits Window {
             return reject;
         }
 
-        TouchArea { clicked => { fs.focus(); } }
+        TouchArea { mouse-cursor: default; clicked => { fs.focus(); } }
 
         HorizontalLayout {
             // ---------------------------------------------------------- sidebar
