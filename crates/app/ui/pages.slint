@@ -71,8 +71,13 @@ export component PreferencesPage inherits Rectangle {
     in-out property <int> theme-mode: 0;
     in-out property <bool> system-titlebar: false;
     in property <string> version;
+    in-out property <string> update-status: "";
+    in-out property <int> update-state: 0;
     callback browse();
     callback theme-changed(int);
+    callback check-update();
+    callback apply-update();
+    callback restart-app();
 
     property <[string]> limit-labels: ["Unlimited", "512 KB/s", "1 MB/s", "2 MB/s", "5 MB/s", "10 MB/s", "20 MB/s", "50 MB/s"];
 
@@ -141,12 +146,23 @@ export component PreferencesPage inherits Rectangle {
             }
 
             Group {
-                title: "About";
+                title: "About & Updates";
                 Row {
                     title: "Smart Download Manager (SDM)";
                     subtitle: "Version " + root.version + " · fast, light, with browser capture";
                     divider: false;
                     Image { source: @image-url("app-icon.png"); width: 44px; height: 44px; }
+                }
+                Row {
+                    title: "Software update";
+                    subtitle: root.update-status != "" ? root.update-status : "Check for the latest release";
+                    divider: true;
+                    if root.update-state == 0 : Button { text: "Check for Updates"; clicked => { root.check-update(); } }
+                    if root.update-state == 1 : Text { text: "Checking…"; color: Theme.dim; font-size: 13px; vertical-alignment: center; }
+                    if root.update-state == 2 : Button { text: "Update Now"; suggested: true; clicked => { root.apply-update(); } }
+                    if root.update-state == 3 : Text { text: "Updating…"; color: Theme.accent-text; font-size: 13px; font-weight: 700; vertical-alignment: center; }
+                    if root.update-state == 4 : Button { text: "Restart Now"; suggested: true; clicked => { root.restart-app(); } }
+                    if root.update-state == 5 : Button { text: "Retry"; clicked => { root.check-update(); } }
                 }
             }
         }

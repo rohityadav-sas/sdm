@@ -105,6 +105,8 @@ export component MainWindow inherits Window {
     in-out property <bool> squared: false;
     in-out property <bool> system-titlebar: false;
     in property <string> version: "";
+    in-out property <string> update-status: "";
+    in-out property <int> update-state: 0;
 
     callback add-quick(string);
     callback add-advanced(string, string, int);
@@ -130,6 +132,9 @@ export component MainWindow inherits Window {
     callback toggle-maximize();
     callback close-window();
     callback frame-changed();
+    callback check-update();
+    callback apply-update();
+    callback restart-app();
 
     changed download-folder => { root.settings-changed(); }
     changed default-conns => { root.settings-changed(); }
@@ -409,8 +414,13 @@ export component MainWindow inherits Window {
                         theme-mode <=> Theme.mode;
                         system-titlebar <=> root.system-titlebar;
                         version: root.version;
+                        update-status <=> root.update-status;
+                        update-state <=> root.update-state;
                         browse => { root.browse-folder(); }
                         theme-changed(i) => { root.settings-changed(); }
+                        check-update => { root.check-update(); }
+                        apply-update => { root.apply-update(); }
+                        restart-app => { root.restart-app(); }
                     }
                 }
 

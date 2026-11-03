@@ -3,6 +3,34 @@ use std::time::Duration;
 use sdm_app::{App, Config, MainWindow};
 
 fn main() -> Result<(), slint::PlatformError> {
+    if std::env::args().any(|a| a == "--update" || a == "-U") {
+        if let Err(e) = sdm_app::update::run_cli() {
+            eprintln!("Update error: {e}");
+            std::process::exit(1);
+        }
+        return Ok(());
+    }
+
+    if std::env::args().any(|a| a == "--version" || a == "-v" || a == "-V") {
+        println!("sdm {}", sdm_app::update::current_version());
+        return Ok(());
+    }
+
+    if std::env::args().any(|a| a == "--help" || a == "-h") {
+        println!(
+            "SDM - Smart Download Manager\n\n\
+            Usage:\n  \
+              sdm [OPTIONS] [URL]\n\n\
+            Arguments:\n  \
+              [URL]          Download link to capture and start\n\n\
+            Options:\n  \
+              -U, --update   Check for updates and apply them directly\n  \
+              -v, --version  Print version information\n  \
+              -h, --help     Print help information"
+        );
+        return Ok(());
+    }
+
     let url = std::env::args().skip(1).find(|a| a.starts_with("http://") || a.starts_with("https://"));
     let data_dir = Config::from_system().data_dir;
 

@@ -94,6 +94,7 @@ struct Inner {
     cfg: Config,
     tick: Timer,
     save: Timer,
+    update_timer: Timer,
     last_tick: Instant,
     last_save: Instant,
     /// The window was closed while downloads keep running.
@@ -102,6 +103,7 @@ struct Inner {
     speeds: VecDeque<f32>,
     last_sample: Instant,
     me: RcWeak<RefCell<Inner>>,
+    pending_update: Option<crate::update::UpdateInfo>,
 }
 
 pub struct App {
@@ -804,6 +806,121 @@ impl Inner {
         }
         self.save_now();
     }
+
+    fn schedule_update_check(&mut self) {
+        if !self.cfg.ipc {
+            return;
+        }
+        let me = self.me.clone();
+        self.update_timer.start(TimerMode::SingleShot, Duration::from_secs(4), move || {
+            with(&me, |s| s.check_update_silent());
+        });
+    }
+
+    fn check_update_silent(&mut self) {
+        self.rt.spawn(async move {
+            if let Ok(info) = crate::update::check_for_update(None).await {
+                if info.is_newer {
+                    let _ = slint::invoke_from_event_loop(move || {
+                        with_inner(|inner| {
+                            inner.pending_update = Some(info.clone());
+                            if let Some(ui) = inner.ui.upgrade() {
+                                ui.set_update_state(2);
+                                ui.set_update_status(format!("Update v{} is available!", info.latest_version).into());
+                            }
+                        });
+                    });
+                }
+            }
+        });
+    }
+
+    fn check_update(&mut self) {
+        if let Some(ui) = self.ui.upgrade() {
+            ui.set_update_state(1);
+            ui.set_update_status("Checking for updates…".into());
+        }
+        self.rt.spawn(async move {
+            let res = crate::update::check_for_update(None).await;
+            let _ = slint::invoke_from_event_loop(move || {
+                with_inner(|inner| inner.on_update_checked(res));
+            });
+        });
+    }
+
+    fn on_update_checked(&mut self, res: Result<crate::update::UpdateInfo, String>) {
+        let Some(ui) = self.ui.upgrade() else { return };
+        match res {
+            Ok(info) => {
+                if info.is_newer {
+                    self.pending_update = Some(info.clone());
+                    ui.set_update_state(2);
+                    ui.set_update_status(format!("Update v{} is available!", info.latest_version).into());
+                    self.toast(&format!("SDM v{} is available!", info.latest_version));
+                } else {
+                    self.pending_update = None;
+                    ui.set_update_state(0);
+                    ui.set_update_status(format!("SDM is up to date (v{})", info.current_version).into());
+                    self.toast("SDM is up to date");
+                }
+            }
+            Err(err) => {
+                self.pending_update = None;
+                ui.set_update_state(5);
+                ui.set_update_status(format!("Check failed: {err}").into());
+                self.toast(&format!("Update check failed: {err}"));
+            }
+        }
+    }
+
+    fn apply_update(&mut self) {
+        let Some(info) = self.pending_update.clone() else {
+            self.check_update();
+            return;
+        };
+        if let Err(msg) = crate::update::check_permissions() {
+            if let Some(ui) = self.ui.upgrade() {
+                ui.set_update_state(5);
+                ui.set_update_status(msg.clone().into());
+            }
+            self.toast(&msg);
+            return;
+        }
+        if let Some(ui) = self.ui.upgrade() {
+            ui.set_update_state(3);
+            ui.set_update_status(format!("Downloading v{}…", info.latest_version).into());
+        }
+        self.toast("Downloading update…");
+        let ver = info.latest_version.clone();
+        self.rt.spawn(async move {
+            let res = crate::update::download_and_apply(&info).await;
+            let _ = slint::invoke_from_event_loop(move || {
+                with_inner(|inner| inner.on_update_applied(res, &ver));
+            });
+        });
+    }
+
+    fn on_update_applied(&mut self, res: Result<(), String>, version: &str) {
+        let Some(ui) = self.ui.upgrade() else { return };
+        match res {
+            Ok(()) => {
+                ui.set_update_state(4);
+                ui.set_update_status(format!("Updated to v{}! Restart to apply.", version).into());
+                self.toast(&format!("Updated to v{}! Restart to apply", version));
+            }
+            Err(err) => {
+                ui.set_update_state(5);
+                ui.set_update_status(format!("Update failed: {err}").into());
+                self.toast(&format!("Update failed: {err}"));
+            }
+        }
+    }
+
+    fn restart_app(&mut self) {
+        if let Err(e) = crate::update::restart_app() {
+            self.toast(&format!("Restart failed: {e}"));
+        }
+    }
 }
 
 fn settings_from_ui(ui: &MainWindow, data_dir: &std::path::Path) -> Settings {
@@ -849,6 +966,12 @@ fn dispatch_to_ui(req: ipc::Request) -> ipc::Reply {
 
 fn with<R>(me: &RcWeak<RefCell<Inner>>, f: impl FnOnce(&mut Inner) -> R) -> Option<R> {
     let rc = me.upgrade()?;
+    let mut g = rc.try_borrow_mut().ok()?;
+    Some(f(&mut g))
+}
+
+fn with_inner<R>(f: impl FnOnce(&mut Inner) -> R) -> Option<R> {
+    let rc = INNER.with(|c| c.borrow().as_ref().and_then(|w| w.upgrade()))?;
     let mut g = rc.try_borrow_mut().ok()?;
     Some(f(&mut g))
 }
@@ -941,15 +1064,18 @@ impl App {
                 cfg,
                 tick: Timer::default(),
                 save: Timer::default(),
+                update_timer: Timer::default(),
                 last_tick: Instant::now(),
                 last_save: Instant::now(),
                 background: false,
                 speeds: VecDeque::new(),
                 last_sample: Instant::now(),
                 me: me.clone(),
+                pending_update: None,
             })
         });
         inner.borrow().refresh_stats();
+        inner.borrow_mut().schedule_update_check();
         let me = Rc::downgrade(&inner);
         INNER.with(|c| *c.borrow_mut() = Some(me.clone()));
         ui.set_ext_state(if ipc::install::is_installed() { 1 } else { 0 });
@@ -1162,6 +1288,24 @@ impl App {
             let me = me.clone();
             move || {
                 with(&me, |s| s.open_download_folder());
+            }
+        });
+        ui.on_check_update({
+            let me = me.clone();
+            move || {
+                with(&me, |s| s.check_update());
+            }
+        });
+        ui.on_apply_update({
+            let me = me.clone();
+            move || {
+                with(&me, |s| s.apply_update());
+            }
+        });
+        ui.on_restart_app({
+            let me = me.clone();
+            move || {
+                with(&me, |s| s.restart_app());
             }
         });
 

@@ -109,6 +109,15 @@ scripts/bench.sh "https://example.com/largefile.iso" 3
 
 ---
 
+## Updates
+
+SDM features atomic in-place self-updating:
+
+- **In-App**: Go to **Preferences** (<kbd>Ctrl</kbd> + <kbd>,</kbd>) &rarr; **About & Updates**, click **Check for Updates**, and select **Update Now** when a release is available.
+- **Terminal**: Run `sdm --update` (or `sdm -U`) to fetch and install the latest release directly.
+
+---
+
 ## Architecture
 
 - **`crates/engine`**: Core headless HTTP/1.1 multi-range download engine.
