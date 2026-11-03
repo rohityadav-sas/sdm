@@ -1,0 +1,199 @@
+import { Theme } from "theme.slint";
+import { Button, Toggle, ConnSlider, Segmented, Card } from "components.slint";
+
+// A titled group of rows inside a card.
+component Group inherits VerticalLayout {
+    in property <string> title;
+    in property <string> description;
+    spacing: 8px;
+    Text { text: root.title; color: Theme.fg; font-size: 14px; font-weight: 700; }
+    if root.description != "" : Text { text: root.description; color: Theme.dim; font-size: 13px; wrap: word-wrap; }
+    Card {
+        VerticalLayout { @children }
+    }
+}
+
+component Row inherits Rectangle {
+    in property <string> title;
+    in property <string> subtitle;
+    in property <bool> divider: true;
+    min-height: 60px;
+    if root.divider : Rectangle { y: 0; height: 1px; background: Theme.separator; }
+    HorizontalLayout {
+        padding-left: 16px;
+        padding-right: 12px;
+        padding-top: 8px;
+        padding-bottom: 8px;
+        spacing: 12px;
+        VerticalLayout {
+            alignment: center;
+            horizontal-stretch: 1;
+            Text { text: root.title; color: Theme.fg; font-size: 15px; overflow: elide; }
+            if root.subtitle != "" : Text { text: root.subtitle; color: Theme.dim; font-size: 13px; wrap: word-wrap; }
+        }
+        VerticalLayout { alignment: center; @children }
+    }
+}
+
+component SliderRow inherits Rectangle {
+    in property <string> title;
+    in property <string> value-text;
+    in property <string> hint;
+    in property <bool> divider: true;
+    in property <int> min: 1;
+    in property <int> max: 32;
+    in-out property <int> value: 8;
+    height: root.hint == "" ? 80px : 98px;
+    if root.divider : Rectangle { y: 0; height: 1px; background: Theme.separator; }
+    VerticalLayout {
+        padding-left: 16px;
+        padding-right: 16px;
+        padding-top: 12px;
+        padding-bottom: 8px;
+        spacing: 2px;
+        HorizontalLayout {
+            Text { text: root.title; color: Theme.fg; font-size: 15px; horizontal-stretch: 1; }
+            Text { text: root.value-text; color: Theme.dim; font-size: 15px; }
+        }
+        if root.hint != "" : Text { text: root.hint; color: Theme.dim; font-size: 13px; }
+        ConnSlider { min: root.min; max: root.max; value <=> root.value; }
+    }
+}
+
+export component PreferencesPage inherits Rectangle {
+    in-out property <string> folder;
+    in-out property <int> conns: 16;
+    in-out property <int> max-active: 4;
+    in-out property <int> speed-limit: 0;
+    in-out property <bool> clipboard: true;
+    in-out property <bool> notify: true;
+    in-out property <bool> keep-running: true;
+    in-out property <int> theme-mode: 0;
+    in-out property <bool> system-titlebar: false;
+    in property <string> version;
+    callback browse();
+    callback theme-changed(int);
+
+    property <[string]> limit-labels: ["Unlimited", "512 KB/s", "1 MB/s", "2 MB/s", "5 MB/s", "10 MB/s", "20 MB/s", "50 MB/s"];
+
+    Flickable {
+        viewport-height: content.preferred-height + 48px;
+        content := VerticalLayout {
+            x: 0;
+            y: 24px;
+            width: parent.width;
+            padding-left: max(24px, (parent.width - 640px) / 2);
+            padding-right: max(24px, (parent.width - 640px) / 2);
+            spacing: 24px;
+            alignment: start;
+
+            Group {
+                title: "Downloads";
+                Row {
+                    title: "Download folder";
+                    subtitle: root.folder;
+                    divider: false;
+                    Button { text: "Choose…"; clicked => { root.browse(); } }
+                }
+                SliderRow { title: "Connections per download"; value-text: root.conns + ""; min: 1; max: 32; value <=> root.conns; hint: "More connections are usually faster. Some servers limit them."; }
+                SliderRow { title: "Downloads at the same time"; value-text: root.max-active + ""; min: 1; max: 8; value <=> root.max-active; hint: "Extra downloads wait in the queue."; }
+                SliderRow { title: "Speed limit"; value-text: root.limit-labels[root.speed-limit]; min: 0; max: 7; value <=> root.speed-limit; hint: "Applies to all downloads together."; }
+            }
+
+            Group {
+                title: "Behavior";
+                Row {
+                    title: "Capture links with Ctrl+V";
+                    subtitle: "Paste a link anywhere in the window to start downloading";
+                    divider: false;
+                    Toggle { checked <=> root.clipboard; }
+                }
+                Row {
+                    title: "Notifications";
+                    subtitle: "Tell me when a download finishes";
+                    Toggle { checked <=> root.notify; }
+                }
+                Row {
+                    title: "Keep running in the background";
+                    subtitle: "Closing the window doesn't stop downloads";
+                    Toggle { checked <=> root.keep-running; }
+                }
+            }
+
+            Group {
+                title: "Appearance";
+                Row {
+                    title: "Style";
+                    subtitle: "Follow the system, or always light or dark";
+                    divider: false;
+                    Segmented {
+                        width: 240px;
+                        options: ["System", "Light", "Dark"];
+                        current <=> root.theme-mode;
+                        changed(i) => { root.theme-changed(i); }
+                    }
+                }
+                Row {
+                    title: "Use the system title bar";
+                    subtitle: "Draws the regular window frame instead of SDM's own header bar. Applies after restart";
+                    Toggle { checked <=> root.system-titlebar; }
+                }
+            }
+
+            Group {
+                title: "About";
+                Row {
+                    title: "Smart Download Manager (SDM)";
+                    subtitle: "Version " + root.version + " · fast, light, with browser capture";
+                    divider: false;
+                    Image { source: @image-url("app-icon.png"); width: 44px; height: 44px; }
+                }
+            }
+        }
+    }
+}
+
+export component ExtensionPage inherits Rectangle {
+    in property <int> ext-state: 0;
+    callback setup();
+
+    Flickable {
+        viewport-height: content.preferred-height + 48px;
+        content := VerticalLayout {
+            x: 0;
+            y: 24px;
+            width: parent.width;
+            padding-left: max(24px, (parent.width - 640px) / 2);
+            padding-right: max(24px, (parent.width - 640px) / 2);
+            spacing: 24px;
+            alignment: start;
+
+            Group {
+                title: "Browser extension";
+                description: "Send downloads from Chrome, Edge, Brave and Firefox straight to SDM, including sites that need you to be logged in.";
+                Row {
+                    title: "Status";
+                    subtitle: root.ext-state == 2 ? "The extension is talking to SDM" : root.ext-state == 1 ? "Ready. Now load the extension in your browser" : "Not set up yet";
+                    divider: false;
+                    Text {
+                        text: root.ext-state == 2 ? "Connected" : root.ext-state == 1 ? "Ready" : "Not set up";
+                        color: root.ext-state == 2 ? Theme.success : root.ext-state == 1 ? Theme.accent-text : Theme.warning;
+                        font-size: 14px;
+                        font-weight: 700;
+                    }
+                }
+                Row {
+                    title: root.ext-state == 0 ? "Set up" : "Run setup again";
+                    subtitle: "Links SDM to your browsers and opens the extension folder";
+                    Button { text: root.ext-state == 0 ? "Set Up" : "Set Up Again"; suggested: root.ext-state == 0; clicked => { root.setup(); } }
+                }
+            }
+
+            Group {
+                title: "Load the extension";
+                Row { title: "Chrome, Edge, Brave"; subtitle: "Open the extensions page, turn on Developer mode, choose Load unpacked and pick the “chromium” folder"; divider: false; }
+                Row { title: "Firefox"; subtitle: "Open about:debugging, This Firefox, Load Temporary Add-on and pick manifest.json in the “firefox” folder"; }
+            }
+        }
+    }
+}

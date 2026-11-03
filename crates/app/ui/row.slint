@@ -1,0 +1,107 @@
+import { Theme } from "theme.slint";
+import { DownloadItem } from "types.slint";
+import { IconButton, ProgressBar, FileTile } from "components.slint";
+
+/// One row of the downloads list (a libadwaita-style list row).
+export component DownloadRow inherits Rectangle {
+    in property <DownloadItem> item;
+    in property <bool> first: false;
+    callback toggle();
+    callback retry();
+    callback open-folder();
+    callback copy-link();
+    callback remove();
+    callback open-file();
+
+    height: 76px;
+    property <bool> downloading: item.status == "downloading";
+    property <bool> paused: item.status == "paused";
+    property <bool> done: item.status == "done";
+    property <bool> failed: item.status == "error";
+    property <bool> queued: item.status == "queued";
+    property <bool> hot: ta.has-hover || act.has-hover || b-main.hovered || b-folder.hovered || b-copy.hovered || b-del.hovered;
+    property <color> tone: done ? Theme.success : paused ? Theme.warning : failed ? Theme.error : Theme.accent;
+    property <string> amount: item.total == "" ? item.downloaded : item.downloaded + " of " + item.total;
+    property <string> subtitle: downloading ? amount + "  ·  " + item.speed + "  ·  " + item.detail
+        : paused ? amount + "  ·  " + item.detail
+        : done ? item.total + "  ·  " + item.detail
+        : item.detail;
+
+    property <bool> appear: false;
+    init => { root.appear = true; }
+    opacity: root.appear ? 1.0 : 0.0;
+    animate opacity { duration: 250ms; easing: ease-out; }
+
+    background: root.hot ? Theme.hover : transparent;
+    animate background { duration: 120ms; }
+
+    if !root.first : Rectangle {
+        y: 0;
+        height: 1px;
+        background: Theme.separator;
+    }
+    ta := TouchArea {
+        mouse-cursor: root.done ? MouseCursor.pointer : MouseCursor.default;
+        double-clicked => { if (root.done) { root.open-file(); } }
+    }
+
+    HorizontalLayout {
+        padding-left: 16px;
+        padding-right: 10px;
+        spacing: 14px;
+
+        VerticalLayout {
+            alignment: center;
+            FileTile { kind: item.kind; }
+        }
+
+        VerticalLayout {
+            horizontal-stretch: 1;
+            alignment: center;
+            spacing: 5px;
+
+            Text { text: item.name; color: Theme.fg; font-size: 15px; overflow: elide; }
+            if root.downloading || root.paused : HorizontalLayout {
+                spacing: 10px;
+                ProgressBar {
+                    value: item.progress;
+                    tone: root.tone;
+                    y: (parent.height - self.height) / 2;
+                }
+                Text { text: Math.round(item.progress * 100) + "%"; color: Theme.dim; font-size: 12px; width: 34px; horizontal-alignment: right; vertical-alignment: center; }
+            }
+            Text { text: root.subtitle; color: root.failed ? Theme.error : Theme.dim; font-size: 13px; overflow: elide; }
+        }
+
+        Rectangle {
+            width: 4 * 34px + 3 * 2px;
+            act := TouchArea { }
+            HorizontalLayout {
+                spacing: 2px;
+                alignment: end;
+                VerticalLayout {
+                    alignment: center;
+                    b-main := IconButton {
+                        icon: root.downloading ? @image-url("icons/pause.svg") : root.failed ? @image-url("icons/retry.svg") : @image-url("icons/play.svg");
+                        tip: root.downloading ? "Pause" : root.failed ? "Try again" : root.queued ? "Start now" : "Resume";
+                        opacity: root.done ? 0.0 : 1.0;
+                        enabled: !root.done;
+                        clicked => { if (root.failed) { root.retry(); } else { root.toggle(); } }
+                    }
+                }
+                VerticalLayout {
+                    alignment: center;
+                    b-folder := IconButton { icon: @image-url("icons/folder.svg"); tip: "Show in folder"; clicked => { root.open-folder(); } }
+                }
+                VerticalLayout {
+                    alignment: center;
+                    b-copy := IconButton { icon: @image-url("icons/copy.svg"); tip: "Copy link"; clicked => { root.copy-link(); } }
+                }
+                VerticalLayout {
+                    alignment: center;
+                    b-del := IconButton { icon: @image-url("icons/trash.svg"); tip: "Remove from list"; tip-end: true; hover-tint: Theme.error; clicked => { root.remove(); } }
+                }
+            }
+        }
+    }
+}

@@ -1,0 +1,37 @@
+{
+  "manifest_version": 3,
+  "name": "SDM Download Capture",
+  "version": "1.0.0",
+  "description": "Send your browser's downloads to Smart Download Manager (SDM).",
+  "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAz5GVFiiMMO0WjsWv+jw0KAU7M3atSNQ4QdhFa2uFhUWJ2F1YwT5Si1BB1hcE5Yh2lsq0ETATfjPxl4Z4zXt6Zr+nSHBnEmPr4wX8vTXayroB9e+liDlPeq6AhQsfq5PSKROm/TTep/5b9eFkZ7a5Xxc4XxwJTqt7CCPL1iwzh5qf+zPPX7ExVWaHnGnwFpCrcT5o98zrkXcnll1goh+y0myCWU1jgmdW4sltG5IIzCJ58nJOMvNrrnsQtfoX9CylSzpm0ZFBSeTy7ecA++9xneCguVjuOuOHsrHY0DVxQrOw8+k1A8g2pOW3cvJ2PqNkjIOx47l30OKQVs9Ym+rrtwIDAQAB",
+  "minimum_chrome_version": "110",
+  "permissions": [
+    "downloads",
+    "nativeMessaging",
+    "cookies",
+    "storage",
+    "contextMenus"
+  ],
+  "host_permissions": [
+    "<all_urls>"
+  ],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "action": {
+    "default_title": "SDM",
+    "default_popup": "popup.html",
+    "default_icon": {
+      "16": "icons/icon16.png",
+      "32": "icons/icon32.png",
+      "48": "icons/icon48.png",
+      "128": "icons/icon128.png"
+    }
+  },
+  "icons": {
+    "16": "icons/icon16.png",
+    "32": "icons/icon32.png",
+    "48": "icons/icon48.png",
+    "128": "icons/icon128.png"
+  }
+}

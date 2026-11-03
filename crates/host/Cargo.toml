@@ -1,0 +1,15 @@
+[package]
+name = "sdm-host"
+version = "1.0.0"
+edition = "2021"
+
+[[bin]]
+name = "sdm-host"
+path = "src/main.rs"
+
+[dependencies]
+ipc = { path = "../ipc" }
+serde_json = "1"
+
+[dev-dependencies]
+serde_json = "1"

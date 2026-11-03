@@ -1,0 +1,131 @@
+import { Theme } from "theme.slint";
+import { IconButton, Button, Entry, ConnSlider, Card } from "components.slint";
+
+/// "New download" dialog.
+export component AddDialog inherits Rectangle {
+    in-out property <bool> open: false;
+    in-out property <string> url;
+    in-out property <string> folder;
+    in-out property <int> conns: 16;
+    callback submit(string, string, int);
+    callback browse();
+    callback close();
+
+    property <float> p: root.open ? 1.0 : 0.0;
+    animate p { duration: 200ms; easing: cubic-bezier(0.22, 1, 0.36, 1); }
+    visible: root.p > 0.001;
+
+    Rectangle {
+        background: #000000;
+        opacity: 0.45 * root.p;
+        TouchArea { enabled: root.open; clicked => { root.close(); } }
+    }
+
+    card := Rectangle {
+        width: min(520px, root.width - 48px);
+        x: (root.width - self.width) / 2;
+        y: (root.height - self.height) / 2 + (1 - root.p) * 16px;
+        height: dl.preferred-height;
+        opacity: root.p;
+        transform-scale: 0.97 + 0.03 * root.p;
+        background: Theme.window;
+        border-radius: 16px;
+        border-width: 1px;
+        border-color: Theme.border;
+        drop-shadow-blur: 40px;
+        drop-shadow-color: #00000070;
+        drop-shadow-offset-y: 12px;
+
+        TouchArea { }
+        dl := VerticalLayout {
+            padding: 20px;
+            spacing: 16px;
+
+            HorizontalLayout {
+                height: 34px;
+                Rectangle { width: 34px; }
+                Text { text: "New Download"; color: Theme.fg; font-size: 16px; font-weight: 700; horizontal-alignment: center; vertical-alignment: center; horizontal-stretch: 1; }
+                IconButton { icon: @image-url("icons/x.svg"); tip: "Close"; tip-end: true; clicked => { root.close(); } }
+            }
+
+            Entry {
+                text <=> root.url;
+                placeholder: "Link to download (https://…)";
+                icon: @image-url("icons/link.svg");
+                accepted(t) => { root.submit(root.url, root.folder, root.conns); }
+            }
+
+            Card {
+                VerticalLayout {
+                    Rectangle {
+                        height: 60px;
+                        HorizontalLayout {
+                            padding-left: 16px;
+                            padding-right: 10px;
+                            spacing: 12px;
+                            VerticalLayout {
+                                alignment: center;
+                                horizontal-stretch: 1;
+                                Text { text: "Save to"; color: Theme.fg; font-size: 15px; }
+                                Text { text: root.folder; color: Theme.dim; font-size: 13px; overflow: elide; }
+                            }
+                            VerticalLayout { alignment: center; Button { text: "Choose…"; clicked => { root.browse(); } } }
+                        }
+                    }
+                    Rectangle { height: 1px; background: Theme.separator; }
+                    Rectangle {
+                        height: 78px;
+                        VerticalLayout {
+                            padding-left: 16px;
+                            padding-right: 16px;
+                            padding-top: 12px;
+                            padding-bottom: 8px;
+                            spacing: 2px;
+                            HorizontalLayout {
+                                Text { text: "Connections"; color: Theme.fg; font-size: 15px; horizontal-stretch: 1; }
+                                Text { text: root.conns + ""; color: Theme.dim; font-size: 15px; }
+                            }
+                            ConnSlider { value <=> root.conns; }
+                        }
+                    }
+                }
+            }
+
+            HorizontalLayout {
+                spacing: 10px;
+                alignment: end;
+                Button { text: "Cancel"; clicked => { root.close(); } }
+                Button { text: "Download"; suggested: true; clicked => { root.submit(root.url, root.folder, root.conns); } }
+            }
+        }
+    }
+}
+
+/// Small dark "toast" message at the bottom of the window.
+export component Toast inherits Rectangle {
+    in-out property <string> message;
+    in-out property <bool> shown: false;
+
+    property <float> p: root.shown ? 1.0 : 0.0;
+    animate p { duration: 220ms; easing: ease-out; }
+    visible: root.p > 0.001;
+    width: msg.preferred-width + 40px;
+    height: 44px;
+
+    Rectangle {
+        y: (1 - root.p) * 20px;
+        opacity: root.p;
+        border-radius: 22px;
+        background: #323232f0;
+        drop-shadow-blur: 14px;
+        drop-shadow-color: #00000066;
+        drop-shadow-offset-y: 4px;
+        msg := Text { width: parent.width; height: parent.height; text: root.message; color: #ffffff; font-size: 14px; horizontal-alignment: center; vertical-alignment: center; }
+    }
+
+    Timer {
+        interval: 2800ms;
+        running: root.shown;
+        triggered => { root.shown = false; }
+    }
+}

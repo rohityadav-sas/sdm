@@ -1,0 +1,49 @@
+# Build and test on all three desktop platforms; build Linux/Windows/macOS release archives on tags.
+# (Written without being able to run it locally - treat the first run as a shakedown.)
+name: ci
+on:
+  push: { branches: [main], tags: ['v*'] }
+  pull_request:
+
+jobs:
+  test:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Linux system libraries
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y libfontconfig1-dev fonts-dejavu-core xvfb
+      - uses: actions/setup-node@v4
+        with: { node-version: 22 }
+      - name: Extension tests
+        run: node --test extension/test/common.test.js
+      - name: Rust tests
+        run: cargo test --workspace
+      - name: Release build
+        run: cargo build --release
+      - name: Package
+        shell: bash
+        run: |
+          mkdir -p dist/sdm
+          for b in sdm sdm-host sdm-cli; do cp target/release/$b* dist/sdm/ 2>/dev/null || true; done
+          cp -r packaging README.md dist/sdm/
+          cd dist && (tar -czf sdm-${{ runner.os }}.tar.gz sdm || 7z a sdm-${{ runner.os }}.zip sdm)
+      - uses: actions/upload-artifact@v4
+        with: { name: sdm-${{ runner.os }}, path: 'dist/sdm-*' }
+
+  rpm:
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    container: fedora:latest
+    steps:
+      - run: dnf install -y rpm-build cargo gcc fontconfig-devel git tar gzip
+      - uses: actions/checkout@v4
+      - run: packaging/make-rpm.sh
+      - uses: actions/upload-artifact@v4
+        with: { name: sdm-rpm, path: '~/rpmbuild/RPMS/**/*.rpm' }

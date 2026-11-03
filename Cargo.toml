@@ -1,0 +1,10 @@
+[workspace]
+members = ["crates/engine", "crates/cli", "crates/app", "crates/ipc", "crates/host"]
+resolver = "2"
+
+[profile.release]
+opt-level = "s"
+lto = true
+codegen-units = 1
+strip = true
+panic = "abort"

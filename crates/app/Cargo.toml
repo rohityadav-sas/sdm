@@ -1,0 +1,31 @@
+[package]
+name = "sdm-app"
+version = "1.0.0"
+edition = "2021"
+build = "build.rs"
+
+[lib]
+path = "src/lib.rs"
+
+[[bin]]
+name = "sdm"
+path = "src/main.rs"
+
+[dependencies]
+anyhow = "1"
+ipc = { path = "../ipc" }
+engine = { path = "../engine" }
+slint = { version = "~1.16", default-features = false, features = ["std", "backend-winit", "renderer-femtovg", "renderer-software", "compat-1-2", "unstable-winit-030"] }
+tokio = { version = "1", features = ["rt-multi-thread", "time"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+dirs = "5"
+rfd = { version = "0.15", default-features = false, features = ["xdg-portal", "tokio"] }
+
+[build-dependencies]
+slint-build = "~1.16"
+
+[dev-dependencies]
+slint = { version = "~1.16", default-features = false, features = ["std", "renderer-software", "software-renderer-systemfonts", "compat-1-2"] }
+tokio = { version = "1", features = ["rt-multi-thread", "time", "net", "io-util", "macros"] }
+png = "0.17"

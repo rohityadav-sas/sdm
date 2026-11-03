@@ -1,0 +1,462 @@
+import { ListView } from "std-widgets.slint";
+import { Theme } from "theme.slint";
+import { DownloadItem } from "types.slint";
+import { IconButton, Button, Entry, Card, SidebarItem } from "components.slint";
+import { DownloadRow } from "row.slint";
+import { AddDialog, Toast } from "overlays.slint";
+import { PreferencesPage, ExtensionPage } from "pages.slint";
+
+export { Theme, DownloadItem }
+
+/// One header bar (title, optional subtitle, buttons on the right). Dragging it moves the window.
+component HeaderBar inherits Rectangle {
+    in property <string> title;
+    in property <string> subtitle;
+    callback drag();
+    callback toggle-max();
+    height: 56px;
+
+    TouchArea {
+        moved => { if (self.pressed) { root.drag(); } }
+        double-clicked => { root.toggle-max(); }
+    }
+    Text {
+        y: root.subtitle == "" ? 0px : 9px;
+        width: parent.width;
+        height: root.subtitle == "" ? parent.height : 22px;
+        text: root.title;
+        color: Theme.fg;
+        font-size: 15px;
+        font-weight: 700;
+        horizontal-alignment: center;
+        vertical-alignment: center;
+    }
+    if root.subtitle != "" : Text {
+        y: 31px;
+        width: parent.width;
+        height: 16px;
+        text: root.subtitle;
+        color: Theme.dim;
+        font-size: 12px;
+        horizontal-alignment: center;
+        vertical-alignment: center;
+    }
+    HorizontalLayout {
+        alignment: end;
+        padding-right: 12px;
+        spacing: 4px;
+        @children
+    }
+    Rectangle { y: parent.height - 1px; height: 1px; background: Theme.border; }
+}
+
+component MenuItem inherits Rectangle {
+    in property <string> text;
+    in property <image> icon;
+    callback clicked();
+    height: 36px;
+    border-radius: 6px;
+    background: ta.has-hover ? Theme.hover : transparent;
+    HorizontalLayout {
+        padding-left: 10px;
+        padding-right: 10px;
+        spacing: 10px;
+        VerticalLayout { alignment: center; Image { source: root.icon; colorize: Theme.fg; width: 16px; height: 16px; } }
+        Text { text: root.text; color: Theme.fg; font-size: 14px; vertical-alignment: center; }
+    }
+    ta := TouchArea { mouse-cursor: pointer; clicked => { root.clicked(); } }
+}
+
+export component MainWindow inherits Window {
+    title: "Smart Download Manager";
+    icon: @image-url("app-icon.png");
+    min-width: 800px;
+    min-height: 560px;
+    preferred-width: 1100px;
+    preferred-height: 720px;
+    // SDM draws its own header bar (like libadwaita apps); the system frame is the fallback.
+    no-frame: root.custom-frame;
+    background: root.custom-frame ? transparent : Theme.window;
+    default-font-size: 14px;
+
+    in property <[DownloadItem]> downloads;
+    in property <string> total-speed: "0 B/s";
+    in property <int> active-count: 0;
+    in property <int> done-count: 0;
+    in property <int> count-all: 0;
+    in property <int> count-busy: 0;
+    in property <int> count-stopped: 0;
+    in-out property <string> download-folder: "~/Downloads";
+    in-out property <int> default-conns: 16;
+    in-out property <int> max-active: 4;
+    in-out property <int> speed-limit: 0;
+    in-out property <bool> clipboard-capture: true;
+    in-out property <bool> notifications: true;
+    in-out property <int> ext-state: 0;
+    in-out property <bool> background-mode: true;
+    in property <string> speed-path;
+    in property <string> speed-fill;
+    in-out property <bool> dialog-open: false;
+    in-out property <string> link-text;
+    in-out property <string> dialog-url;
+    // 0 all, 1 active, 2 completed, 3 stopped, 4 preferences, 5 browser extension
+    in-out property <int> page: 0;
+    in-out property <bool> custom-frame: true;
+    in-out property <bool> squared: false;
+    in-out property <bool> system-titlebar: false;
+    in property <string> version: "";
+
+    callback add-quick(string);
+    callback add-advanced(string, string, int);
+    callback paste-requested();
+    callback toggle(int);
+    callback retry(int);
+    callback open-folder(int);
+    callback copy-link(int);
+    callback remove(int);
+    callback browse-folder();
+    callback open-file(int);
+    callback settings-changed();
+    callback limits-changed();
+    callback setup-extension();
+    callback pause-all();
+    callback resume-all();
+    callback clear-done();
+    callback open-download-folder();
+    callback quit-requested();
+    callback page-changed(int);
+    callback begin-drag();
+    callback begin-resize(string);
+    callback toggle-maximize();
+    callback close-window();
+    callback frame-changed();
+
+    changed download-folder => { root.settings-changed(); }
+    changed default-conns => { root.settings-changed(); }
+    changed clipboard-capture => { root.settings-changed(); }
+    changed notifications => { root.settings-changed(); }
+    changed background-mode => { root.settings-changed(); }
+    changed max-active => { root.settings-changed(); root.limits-changed(); }
+    changed speed-limit => { root.settings-changed(); root.limits-changed(); }
+    changed page => { root.page-changed(root.page); }
+    changed system-titlebar => { root.settings-changed(); }
+    changed width => { root.frame-changed(); }
+    changed height => { root.frame-changed(); }
+
+    property <[string]> titles: ["All Downloads", "Active", "Completed", "Stopped", "Preferences", "Browser Extension"];
+    property <[string]> empty-titles: ["No Downloads", "Nothing Active", "Nothing Completed Yet", "Nothing Stopped"];
+    property <[string]> empty-texts: [
+        "Paste a link with Ctrl+V, or type it above.",
+        "Downloads in progress and in the queue show up here.",
+        "Finished downloads show up here.",
+        "Paused and failed downloads show up here.",
+    ];
+
+    public function show-toast(msg: string) {
+        toast.message = msg;
+        toast.shown = true;
+    }
+
+    // The window's own clipboard path (works on Wayland and X11 alike).
+    public function read-clipboard() -> string {
+        clip.text = "";
+        clip.paste();
+        return clip.text;
+    }
+    public function write-clipboard(t: string) {
+        clip.text = t;
+        clip.select-all();
+        clip.copy();
+        clip.clear-selection();
+        clip.text = "";
+    }
+
+    clip := TextInput {
+        x: -200px; y: -200px; width: 10px; height: 10px; opacity: 0.0;
+    }
+
+    init => { fs.focus(); }
+
+    frame := Rectangle {
+    width: root.width;
+    height: root.height;
+    background: Theme.window;
+    border-radius: root.custom-frame && !root.squared ? 12px : 0px;
+    border-width: root.custom-frame && !root.squared ? 1px : 0px;
+    border-color: Theme.border;
+    clip: true;
+    animate background { duration: 180ms; }
+
+    fs := FocusScope {
+        key-pressed(event) => {
+            if ((event.modifiers.control || event.modifiers.meta) && event.text == "v" && root.clipboard-capture && !root.dialog-open && root.page < 4) {
+                root.paste-requested();
+                return accept;
+            }
+            if ((event.modifiers.control || event.modifiers.meta) && event.text == "n") {
+                root.dialog-url = root.link-text;
+                root.dialog-open = true;
+                return accept;
+            }
+            if ((event.modifiers.control || event.modifiers.meta) && event.text == ",") {
+                root.page = 4;
+                return accept;
+            }
+            if ((event.modifiers.control || event.modifiers.meta) && event.text == "q") {
+                root.quit-requested();
+                return accept;
+            }
+            if (event.text == Key.Escape) {
+                root.dialog-open = false;
+                return accept;
+            }
+            return reject;
+        }
+
+        TouchArea { clicked => { fs.focus(); } }
+
+        HorizontalLayout {
+            // ---------------------------------------------------------- sidebar
+            Rectangle {
+                width: 232px;
+                background: Theme.sidebar;
+                animate background { duration: 180ms; }
+
+                Rectangle { x: parent.width - 1px; width: 1px; background: Theme.border; }
+
+                VerticalLayout {
+                    HeaderBar {
+                        title: "SDM";
+                        subtitle: "Smart Download Manager";
+                        drag => { root.begin-drag(); }
+                        toggle-max => { root.toggle-maximize(); }
+                        Rectangle {
+                            width: 34px;
+                            VerticalLayout {
+                                alignment: center;
+                                IconButton { icon: @image-url("icons/menu.svg"); tip: "Main menu"; clicked => { main-menu.show(); } }
+                            }
+                            main-menu := PopupWindow {
+                                x: 34px - 220px;
+                                y: 50px;
+                                width: 220px;
+                                height: 3 * 36px + 16px;
+                                Rectangle {
+                                    background: Theme.card;
+                                    border-radius: 10px;
+                                    border-width: 1px;
+                                    border-color: Theme.border;
+                                    drop-shadow-blur: 16px;
+                                    drop-shadow-color: #00000050;
+                                    drop-shadow-offset-y: 4px;
+                                    VerticalLayout {
+                                        padding: 8px;
+                                        MenuItem { text: "Preferences"; icon: @image-url("icons/settings.svg"); clicked => { root.page = 4; } }
+                                        MenuItem { text: "Browser Extension"; icon: @image-url("icons/puzzle.svg"); clicked => { root.page = 5; } }
+                                        MenuItem { text: "Quit"; icon: @image-url("icons/x.svg"); clicked => { root.quit-requested(); } }
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    VerticalLayout {
+                    padding: 12px;
+                    padding-right: 13px;
+                    spacing: 2px;
+
+                    SidebarItem { icon: @image-url("icons/inbox.svg"); text: "All Downloads"; badge: root.count-all > 0 ? root.count-all + "" : ""; selected: root.page == 0; clicked => { root.page = 0; } }
+                    SidebarItem { icon: @image-url("icons/activity.svg"); text: "Active"; badge: root.count-busy > 0 ? root.count-busy + "" : ""; selected: root.page == 1; clicked => { root.page = 1; } }
+                    SidebarItem { icon: @image-url("icons/check.svg"); text: "Completed"; badge: root.done-count > 0 ? root.done-count + "" : ""; selected: root.page == 2; clicked => { root.page = 2; } }
+                    SidebarItem { icon: @image-url("icons/pause.svg"); text: "Stopped"; badge: root.count-stopped > 0 ? root.count-stopped + "" : ""; selected: root.page == 3; clicked => { root.page = 3; } }
+
+                    Rectangle { height: 17px; Rectangle { y: 8px; height: 1px; background: Theme.border; } }
+
+                    SidebarItem { icon: @image-url("icons/settings.svg"); text: "Preferences"; selected: root.page == 4; clicked => { root.page = 4; } }
+                    SidebarItem { icon: @image-url("icons/puzzle.svg"); text: "Browser Extension"; selected: root.page == 5; clicked => { root.page = 5; } }
+
+                    Rectangle { vertical-stretch: 1; }
+
+                    Card {
+                        height: 88px;
+                        Text { x: 14px; y: 12px; text: "Download speed"; color: Theme.dim; font-size: 12px; }
+                        Text { x: 14px; y: 28px; text: root.total-speed; color: Theme.fg; font-size: 18px; font-weight: 700; }
+                        if root.speed-path != "" : Path {
+                            x: 12px; y: 52px; width: parent.width - 24px; height: 28px;
+                            viewbox-width: 184; viewbox-height: 36;
+                            commands: root.speed-fill;
+                            fill: @linear-gradient(180deg, Theme.accent.with-alpha(0.35) 0%, Theme.accent.with-alpha(0.0) 100%);
+                        }
+                        if root.speed-path != "" : Path {
+                            x: 12px; y: 52px; width: parent.width - 24px; height: 28px;
+                            viewbox-width: 184; viewbox-height: 36;
+                            commands: root.speed-path;
+                            stroke: Theme.accent;
+                            stroke-width: 1.5px;
+                            stroke-line-cap: round;
+                            stroke-line-join: round;
+                        }
+                    }
+                    }
+                }
+            }
+
+            // ---------------------------------------------------------- content
+            Rectangle {
+                horizontal-stretch: 1;
+
+                if root.page < 4 : VerticalLayout {
+                    HeaderBar {
+                        title: root.titles[root.page];
+                        subtitle: root.active-count > 0 ? root.active-count + (root.active-count == 1 ? " download" : " downloads") + " · " + root.total-speed : root.count-all == 0 ? "Nothing here yet" : root.count-all + (root.count-all == 1 ? " item" : " items");
+                        drag => { root.begin-drag(); }
+                        toggle-max => { root.toggle-maximize(); }
+                        VerticalLayout { alignment: center; IconButton { icon: @image-url("icons/folder.svg"); tip: "Open download folder"; clicked => { root.open-download-folder(); } } }
+                        Rectangle {
+                            width: 34px;
+                            VerticalLayout {
+                                alignment: center;
+                                IconButton { icon: @image-url("icons/more.svg"); tip: "More actions"; clicked => { menu.show(); } }
+                            }
+                            menu := PopupWindow {
+                                x: 34px - 220px;
+                                y: 50px;
+                                width: 220px;
+                                height: 3 * 36px + 16px;
+                                Rectangle {
+                                    background: Theme.card;
+                                    border-radius: 10px;
+                                    border-width: 1px;
+                                    border-color: Theme.border;
+                                    drop-shadow-blur: 16px;
+                                    drop-shadow-color: #00000050;
+                                    drop-shadow-offset-y: 4px;
+                                    VerticalLayout {
+                                        padding: 8px;
+                                        MenuItem { text: "Pause all"; icon: @image-url("icons/pause.svg"); clicked => { root.pause-all(); } }
+                                        MenuItem { text: "Resume all"; icon: @image-url("icons/play.svg"); clicked => { root.resume-all(); } }
+                                        MenuItem { text: "Clear completed"; icon: @image-url("icons/x.svg"); clicked => { root.clear-done(); } }
+                                    }
+                                }
+                            }
+                        }
+                        if root.custom-frame : VerticalLayout { alignment: center; IconButton { icon: @image-url("icons/x.svg"); tip: "Close"; tip-end: true; clicked => { root.close-window(); } } }
+                    }
+
+                    VerticalLayout {
+                        padding: 20px;
+                        padding-left: max(20px, (parent.width - 820px) / 2);
+                        padding-right: max(20px, (parent.width - 820px) / 2);
+                        spacing: 16px;
+
+                        HorizontalLayout {
+                            spacing: 8px;
+                            Entry {
+                                horizontal-stretch: 1;
+                                text <=> root.link-text;
+                                placeholder: "Paste a download link";
+                                icon: @image-url("icons/link.svg");
+                                accepted(t) => { root.add-quick(root.link-text); }
+                            }
+                            Button { height: 40px; icon: @image-url("icons/plus.svg"); text: ""; clicked => { root.dialog-url = root.link-text; root.dialog-open = true; } }
+                            Button { height: 40px; text: "Download"; suggested: true; clicked => { root.add-quick(root.link-text); } }
+                        }
+
+                        Rectangle {
+                            vertical-stretch: 1;
+                            if root.downloads.length == 0 : VerticalLayout {
+                                alignment: center;
+                                spacing: 8px;
+                                Image { source: @image-url("icons/inbox.svg"); colorize: Theme.faint; width: 72px; height: 72px; }
+                                Text { text: root.empty-titles[root.page]; color: Theme.fg; font-size: 22px; font-weight: 700; horizontal-alignment: center; }
+                                Text { text: root.empty-texts[root.page]; color: Theme.dim; font-size: 14px; horizontal-alignment: center; }
+                            }
+                            if root.downloads.length > 0 : Card {
+                                clip: true;
+                                ListView {
+                                    for item[i] in root.downloads : DownloadRow {
+                                        item: item;
+                                        first: i == 0;
+                                        toggle => { root.toggle(item.id); }
+                                        retry => { root.retry(item.id); }
+                                        open-folder => { root.open-folder(item.id); }
+                                        copy-link => { root.copy-link(item.id); }
+                                        remove => { root.remove(item.id); }
+                                        open-file => { root.open-file(item.id); }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+
+                if root.page == 4 : VerticalLayout {
+                    HeaderBar {
+                        title: "Preferences";
+                        drag => { root.begin-drag(); }
+                        toggle-max => { root.toggle-maximize(); }
+                        if root.custom-frame : VerticalLayout { alignment: center; IconButton { icon: @image-url("icons/x.svg"); tip: "Close"; tip-end: true; clicked => { root.close-window(); } } }
+                    }
+                    PreferencesPage {
+                        vertical-stretch: 1;
+                        folder <=> root.download-folder;
+                        conns <=> root.default-conns;
+                        max-active <=> root.max-active;
+                        speed-limit <=> root.speed-limit;
+                        clipboard <=> root.clipboard-capture;
+                        notify <=> root.notifications;
+                        keep-running <=> root.background-mode;
+                        theme-mode <=> Theme.mode;
+                        system-titlebar <=> root.system-titlebar;
+                        version: root.version;
+                        browse => { root.browse-folder(); }
+                        theme-changed(i) => { root.settings-changed(); }
+                    }
+                }
+
+                if root.page == 5 : VerticalLayout {
+                    HeaderBar {
+                        title: "Browser Extension";
+                        drag => { root.begin-drag(); }
+                        toggle-max => { root.toggle-maximize(); }
+                        if root.custom-frame : VerticalLayout { alignment: center; IconButton { icon: @image-url("icons/x.svg"); tip: "Close"; tip-end: true; clicked => { root.close-window(); } } }
+                    }
+                    ExtensionPage {
+                        vertical-stretch: 1;
+                        ext-state: root.ext-state;
+                        setup => { root.setup-extension(); }
+                    }
+                }
+            }
+        }
+    }
+
+    // Invisible grips on the window edges (only needed because SDM draws its own frame).
+    if root.custom-frame && !root.squared : Rectangle {
+        TouchArea { x: 14px; y: 0px; width: parent.width - 28px; height: 5px; mouse-cursor: ns-resize; pointer-event(e) => { if (e.kind == PointerEventKind.down && e.button == PointerEventButton.left) { root.begin-resize("n"); } } }
+        TouchArea { x: 14px; y: parent.height - 5px; width: parent.width - 28px; height: 5px; mouse-cursor: ns-resize; pointer-event(e) => { if (e.kind == PointerEventKind.down && e.button == PointerEventButton.left) { root.begin-resize("s"); } } }
+        TouchArea { x: 0px; y: 14px; width: 5px; height: parent.height - 28px; mouse-cursor: ew-resize; pointer-event(e) => { if (e.kind == PointerEventKind.down && e.button == PointerEventButton.left) { root.begin-resize("w"); } } }
+        TouchArea { x: parent.width - 5px; y: 14px; width: 5px; height: parent.height - 28px; mouse-cursor: ew-resize; pointer-event(e) => { if (e.kind == PointerEventKind.down && e.button == PointerEventButton.left) { root.begin-resize("e"); } } }
+        TouchArea { x: 0px; y: 0px; width: 14px; height: 14px; mouse-cursor: nwse-resize; pointer-event(e) => { if (e.kind == PointerEventKind.down && e.button == PointerEventButton.left) { root.begin-resize("nw"); } } }
+        TouchArea { x: parent.width - 14px; y: 0px; width: 14px; height: 14px; mouse-cursor: nesw-resize; pointer-event(e) => { if (e.kind == PointerEventKind.down && e.button == PointerEventButton.left) { root.begin-resize("ne"); } } }
+        TouchArea { x: 0px; y: parent.height - 14px; width: 14px; height: 14px; mouse-cursor: nesw-resize; pointer-event(e) => { if (e.kind == PointerEventKind.down && e.button == PointerEventButton.left) { root.begin-resize("sw"); } } }
+        TouchArea { x: parent.width - 14px; y: parent.height - 14px; width: 14px; height: 14px; mouse-cursor: nwse-resize; pointer-event(e) => { if (e.kind == PointerEventKind.down && e.button == PointerEventButton.left) { root.begin-resize("se"); } } }
+    }
+    }
+
+    AddDialog {
+        x: 0; y: 0; width: root.width; height: root.height;
+        open <=> root.dialog-open;
+        url <=> root.dialog-url;
+        folder <=> root.download-folder;
+        conns <=> root.default-conns;
+        close => { root.dialog-open = false; }
+        browse => { root.browse-folder(); }
+        submit(u, f, c) => { root.dialog-open = false; root.add-advanced(u, f, c); }
+    }
+
+    toast := Toast {
+        x: (root.width - self.width) / 2;
+        y: root.height - 44px - 28px;
+    }
+}

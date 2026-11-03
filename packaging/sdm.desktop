@@ -1,0 +1,12 @@
+[Desktop Entry]
+Type=Application
+Name=Smart Download Manager
+GenericName=Download Manager
+Comment=Fast, light download manager (SDM)
+Exec=sdm %U
+Icon=sdm
+Terminal=false
+Categories=Network;FileTransfer;
+Keywords=download;downloader;manager;sdm;idm;
+StartupWMClass=sdm
+StartupNotify=true

@@ -1,0 +1,18 @@
+# Rust build artifacts
+target/
+**/*.rs.bk
+
+# OS & Editor files
+.DS_Store
+Thumbs.db
+*.swp
+*.swo
+*~
+.idea/
+.vscode/
+
+# Packaging & dist artifacts
+dist/
+*.part
+*.part.json
+*.tmp

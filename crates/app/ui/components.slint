@@ -1,0 +1,370 @@
+import { Theme } from "theme.slint";
+
+export global Icons {
+    public pure function for-kind(kind: string) -> image {
+        if (kind == "archive") { return @image-url("icons/archive.svg"); }
+        if (kind == "video") { return @image-url("icons/video.svg"); }
+        if (kind == "audio") { return @image-url("icons/music.svg"); }
+        if (kind == "image") { return @image-url("icons/image.svg"); }
+        if (kind == "doc") { return @image-url("icons/doc.svg"); }
+        if (kind == "app") { return @image-url("icons/package.svg"); }
+        return @image-url("icons/file.svg");
+    }
+}
+
+/// Hover tooltip: place inside any hoverable element and feed it the hover state.
+export component TipArea inherits Rectangle {
+    in property <bool> hovering;
+    in property <string> text;
+    /// Anchor to the right edge instead of centering (for buttons near the window edge).
+    in property <bool> align-end: false;
+    property <bool> open: false;
+
+    Timer {
+        interval: 500ms;
+        running: root.hovering && root.text != "" && !root.open;
+        triggered => {
+            root.open = true;
+            pop.show();
+        }
+    }
+    changed hovering => {
+        if (!root.hovering) {
+            root.open = false;
+            pop.close();
+        }
+    }
+    pop := PopupWindow {
+        x: root.align-end ? root.width - self.width : (root.width - self.width) / 2;
+        y: root.height + 6px;
+        width: label.preferred-width + 20px;
+        height: 28px;
+        close-policy: no-auto-close;
+        Rectangle {
+            background: #2d2d2df2;
+            border-radius: 6px;
+            label := Text {
+                x: 10px;
+                width: parent.width - 20px;
+                height: parent.height;
+                text: root.text;
+                color: #ffffff;
+                font-size: 12px;
+                horizontal-alignment: center;
+                vertical-alignment: center;
+            }
+        }
+    }
+}
+
+/// White rounded container (libadwaita "boxed list" / card).
+export component Card inherits Rectangle {
+    background: Theme.card;
+    border-radius: 12px;
+    border-width: 1px;
+    border-color: Theme.border;
+    drop-shadow-blur: 3px;
+    drop-shadow-color: Theme.dark ? #00000040 : #0000001a;
+    drop-shadow-offset-y: 1px;
+    animate background { duration: 180ms; }
+    animate border-color { duration: 180ms; }
+}
+
+export component IconButton inherits Rectangle {
+    in property <image> icon;
+    in property <color> tint: Theme.dim;
+    in property <color> hover-tint: Theme.fg;
+    in property <length> size: 34px;
+    in property <length> icon-size: 16px;
+    in property <bool> enabled: true;
+    in property <string> tip;
+    in property <bool> tip-end: false;
+    out property <bool> hovered: ta.has-hover;
+    callback clicked();
+
+    width: root.size;
+    height: root.size;
+    border-radius: root.size / 2;
+    background: ta.pressed ? Theme.control-hover : ta.has-hover ? Theme.control : transparent;
+    animate background { duration: 120ms; }
+
+    Image {
+        source: root.icon;
+        width: root.icon-size;
+        height: root.icon-size;
+        colorize: ta.has-hover ? root.hover-tint : root.tint;
+        animate colorize { duration: 120ms; }
+    }
+    TipArea { width: parent.width; height: parent.height; hovering: ta.has-hover; text: root.tip; align-end: root.tip-end; }
+    ta := TouchArea {
+        enabled: root.enabled;
+        mouse-cursor: pointer;
+        clicked => { root.clicked(); }
+    }
+}
+
+/// Default / suggested (blue) button.
+export component Button inherits Rectangle {
+    in property <string> text;
+    in property <image> icon;
+    in property <bool> suggested: false;
+    in property <bool> flat: false;
+    in property <string> tip;
+    callback clicked();
+
+    height: 34px;
+    border-radius: 8px;
+    background: root.suggested
+        ? (ta.pressed ? Theme.accent.darker(0.25) : ta.has-hover ? Theme.accent.brighter(0.12) : Theme.accent)
+        : root.flat
+            ? (ta.pressed ? Theme.control-hover : ta.has-hover ? Theme.control : transparent)
+            : (ta.pressed || ta.has-hover ? Theme.control-hover : Theme.control);
+    animate background { duration: 120ms; }
+
+    HorizontalLayout {
+        padding-left: root.text == "" ? 13px : 16px;
+        padding-right: root.text == "" ? 13px : 16px;
+        spacing: 8px;
+        alignment: center;
+        if root.icon.width > 0 : VerticalLayout {
+            alignment: center;
+            Image { source: root.icon; colorize: root.suggested ? Theme.accent-fg : Theme.fg; width: 16px; height: 16px; }
+        }
+        if root.text != "" : Text { text: root.text; color: root.suggested ? Theme.accent-fg : Theme.fg; font-size: 14px; font-weight: 600; vertical-alignment: center; }
+    }
+    TipArea { width: parent.width; height: parent.height; hovering: ta.has-hover; text: root.tip; }
+    ta := TouchArea {
+        mouse-cursor: pointer;
+        clicked => { root.clicked(); }
+    }
+}
+
+export component Entry inherits Rectangle {
+    in-out property <string> text;
+    in property <string> placeholder;
+    in property <image> icon;
+    out property <bool> focused: input.has-focus;
+    callback accepted(string);
+
+    height: 40px;
+    border-radius: 8px;
+    background: Theme.control;
+    border-width: 2px;
+    border-color: input.has-focus ? Theme.accent : transparent;
+    animate border-color { duration: 120ms; }
+
+    HorizontalLayout {
+        padding-left: 12px;
+        padding-right: 12px;
+        spacing: 8px;
+        if root.icon.width > 0 : VerticalLayout {
+            alignment: center;
+            Image { source: root.icon; colorize: Theme.dim; width: 16px; height: 16px; }
+        }
+        Rectangle {
+            horizontal-stretch: 1;
+            input := TextInput {
+                text <=> root.text;
+                single-line: true;
+                color: Theme.fg;
+                font-size: 14px;
+                vertical-alignment: center;
+                selection-background-color: Theme.accent.with-alpha(0.4);
+                accepted => { root.accepted(root.text); }
+            }
+            if root.text == "" : Text {
+                x: 0px;
+                width: parent.width;
+                text: root.placeholder;
+                color: Theme.faint;
+                font-size: 14px;
+                horizontal-alignment: left;
+                vertical-alignment: center;
+            }
+        }
+    }
+}
+
+export component Toggle inherits Rectangle {
+    in-out property <bool> checked;
+    callback toggled(bool);
+
+    width: 48px;
+    height: 26px;
+    border-radius: 13px;
+    background: root.checked ? Theme.accent : Theme.track;
+    animate background { duration: 180ms; }
+
+    Rectangle {
+        x: root.checked ? root.width - self.width - 3px : 3px;
+        y: 3px;
+        width: 20px;
+        height: 20px;
+        border-radius: 10px;
+        background: #ffffff;
+        drop-shadow-blur: 2px;
+        drop-shadow-color: #00000050;
+        drop-shadow-offset-y: 1px;
+        animate x { duration: 180ms; easing: ease-out; }
+    }
+    TouchArea {
+        mouse-cursor: pointer;
+        clicked => {
+            root.checked = !root.checked;
+            root.toggled(root.checked);
+        }
+    }
+}
+
+export component ConnSlider inherits Rectangle {
+    in-out property <int> value: 8;
+    in property <int> min: 1;
+    in property <int> max: 32;
+    callback changed(int);
+
+    height: 28px;
+    property <float> frac: (root.value - root.min) / (root.max - root.min);
+
+    Rectangle {
+        y: (parent.height - self.height) / 2;
+        height: 6px;
+        border-radius: 3px;
+        background: Theme.track;
+        Rectangle {
+            x: 0;
+            width: 10px + (parent.width - 10px) * root.frac;
+            height: parent.height;
+            border-radius: 3px;
+            background: Theme.accent;
+            animate width { duration: 80ms; }
+        }
+    }
+    Rectangle {
+        x: (root.width - self.width) * root.frac;
+        y: (parent.height - self.height) / 2;
+        width: 20px;
+        height: 20px;
+        border-radius: 10px;
+        background: #ffffff;
+        border-width: 1px;
+        border-color: #00000033;
+        drop-shadow-blur: 4px;
+        drop-shadow-color: #00000040;
+        drop-shadow-offset-y: 1px;
+        animate x { duration: 80ms; }
+    }
+    ta := TouchArea {
+        mouse-cursor: pointer;
+        function set-from(x: length) {
+            root.value = Math.round(root.min + Math.clamp((x - 10px) / (root.width - 20px), 0, 1) * (root.max - root.min));
+            root.changed(root.value);
+        }
+        pointer-event(e) => {
+            if (e.kind == PointerEventKind.down) { self.set-from(self.mouse-x); }
+        }
+        moved => {
+            if (self.pressed) { self.set-from(self.mouse-x); }
+        }
+    }
+}
+
+export component ProgressBar inherits Rectangle {
+    in property <float> value;
+    in property <color> tone: Theme.accent;
+
+    height: 6px;
+    border-radius: 3px;
+    background: Theme.track;
+    clip: true;
+
+    Rectangle {
+        x: 0;
+        width: root.width * Math.clamp(root.value, 0, 1);
+        height: root.height;
+        border-radius: 3px;
+        background: root.tone;
+        animate width { duration: 300ms; easing: ease-out; }
+        animate background { duration: 200ms; }
+    }
+}
+
+export component FileTile inherits Rectangle {
+    in property <string> kind;
+    property <color> tone: kind == "archive" ? (Theme.dark ? #ffa348 : #e66100)
+        : kind == "video" ? (Theme.dark ? #dc8add : #813d9c)
+        : kind == "audio" ? (Theme.dark ? #8ff0a4 : #26a269)
+        : kind == "image" ? (Theme.dark ? #99c1f1 : #1c71d8)
+        : kind == "doc" ? (Theme.dark ? #c0bfbc : #5e5c64)
+        : kind == "app" ? (Theme.dark ? #ff7b63 : #c01c28)
+        : Theme.dim;
+
+    width: 40px;
+    height: 40px;
+    border-radius: 10px;
+    background: root.tone.with-alpha(0.16);
+
+    Image {
+        source: Icons.for-kind(root.kind);
+        colorize: root.tone;
+        width: 20px;
+        height: 20px;
+    }
+}
+
+export component SidebarItem inherits Rectangle {
+    in property <image> icon;
+    in property <string> text;
+    in property <string> badge;
+    in property <bool> selected;
+    callback clicked();
+
+    height: 40px;
+    border-radius: 8px;
+    background: root.selected ? Theme.selected : ta.has-hover ? Theme.hover : transparent;
+    animate background { duration: 120ms; }
+
+    HorizontalLayout {
+        padding-left: 12px;
+        padding-right: 12px;
+        spacing: 12px;
+        VerticalLayout {
+            alignment: center;
+            Image { source: root.icon; colorize: Theme.fg; width: 16px; height: 16px; }
+        }
+        Text { text: root.text; color: Theme.fg; font-size: 14px; font-weight: root.selected ? 600 : 400; vertical-alignment: center; horizontal-stretch: 1; overflow: elide; }
+        if root.badge != "" : Text { text: root.badge; color: Theme.dim; font-size: 12px; vertical-alignment: center; }
+    }
+    ta := TouchArea {
+        mouse-cursor: pointer;
+        clicked => { root.clicked(); }
+    }
+}
+
+/// Linked toggle buttons: one of several options.
+export component Segmented inherits Rectangle {
+    in property <[string]> options;
+    in-out property <int> current;
+    callback changed(int);
+
+    height: 36px;
+    border-radius: 8px;
+    background: Theme.control;
+
+    for opt[i] in root.options : Rectangle {
+        x: 2px + i * ((root.width - 4px) / root.options.length);
+        y: 2px;
+        width: (root.width - 4px) / root.options.length;
+        height: root.height - 4px;
+        border-radius: 6px;
+        background: root.current == i ? Theme.card : transparent;
+        drop-shadow-blur: root.current == i ? 2px : 0px;
+        drop-shadow-color: #00000033;
+        drop-shadow-offset-y: 1px;
+        animate background { duration: 140ms; }
+        Text { text: opt; color: root.current == i ? Theme.fg : Theme.dim; font-size: 13px; font-weight: root.current == i ? 600 : 400; horizontal-alignment: center; vertical-alignment: center; }
+        TouchArea {
+            mouse-cursor: pointer;
+            clicked => { root.current = i; root.changed(i); }
+        }
+    }
+}

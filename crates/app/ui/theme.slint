@@ -1,0 +1,32 @@
+import { Palette } from "std-widgets.slint";
+
+// Flat colours in the spirit of GNOME's libadwaita. By default the app follows the
+// system light/dark setting.
+export global Theme {
+    // 0 = follow the system, 1 = light, 2 = dark
+    in-out property <int> mode: 0;
+    out property <bool> dark: mode == 2 || (mode == 0 && Palette.color-scheme == ColorScheme.dark);
+
+    out property <color> window: dark ? #242424 : #fafafb;   // page background
+    out property <color> sidebar: dark ? #2e2e32 : #ebebed;
+    out property <color> card: dark ? #303030 : #ffffff;     // boxed lists
+    out property <color> border: dark ? #ffffff1a : #0000001a;
+    out property <color> separator: dark ? #ffffff14 : #00000014;
+
+    out property <color> fg: dark ? #ffffff : #2d2d2d;
+    out property <color> dim: dark ? #ffffffa6 : #00000099;
+    out property <color> faint: dark ? #ffffff66 : #00000073;
+
+    out property <color> hover: dark ? #ffffff12 : #0000000a;
+    out property <color> selected: dark ? #ffffff1f : #00000014;
+    out property <color> control: dark ? #ffffff1a : #0000000f;        // default button / entry
+    out property <color> control-hover: dark ? #ffffff29 : #0000001c;
+    out property <color> track: dark ? #ffffff24 : #0000001a;
+
+    out property <color> accent: #3584e4;
+    out property <color> accent-fg: #ffffff;
+    out property <color> accent-text: dark ? #78aeed : #1c71d8;
+    out property <color> success: dark ? #8ff0a4 : #26a269;
+    out property <color> warning: dark ? #f8e45c : #ae7b03;
+    out property <color> error: dark ? #ff7b63 : #c01c28;
+}

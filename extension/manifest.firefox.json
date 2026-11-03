@@ -1,0 +1,42 @@
+{
+  "manifest_version": 2,
+  "name": "SDM Download Capture",
+  "version": "1.0.0",
+  "description": "Send your browser's downloads to Smart Download Manager (SDM).",
+  "browser_specific_settings": {
+    "gecko": {
+      "id": "sdm@local.sdm",
+      "strict_min_version": "109.0"
+    }
+  },
+  "permissions": [
+    "downloads",
+    "nativeMessaging",
+    "cookies",
+    "storage",
+    "contextMenus",
+    "<all_urls>"
+  ],
+  "background": {
+    "scripts": [
+      "common.js",
+      "background.js"
+    ]
+  },
+  "browser_action": {
+    "default_title": "SDM",
+    "default_popup": "popup.html",
+    "default_icon": {
+      "16": "icons/icon16.png",
+      "32": "icons/icon32.png",
+      "48": "icons/icon48.png",
+      "128": "icons/icon128.png"
+    }
+  },
+  "icons": {
+    "16": "icons/icon16.png",
+    "32": "icons/icon32.png",
+    "48": "icons/icon48.png",
+    "128": "icons/icon128.png"
+  }
+}
