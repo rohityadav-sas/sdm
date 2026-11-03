@@ -3,6 +3,10 @@ use std::time::Duration;
 use sdm_app::{App, Config, MainWindow};
 
 fn main() -> Result<(), slint::PlatformError> {
+    // Clear desktop startup notification ID so desktop environments / compositors
+    // do not keep showing a busy cursor waiting for an unhandled X11/Wayland notification.
+    std::env::remove_var("DESKTOP_STARTUP_ID");
+
     if std::env::args().any(|a| a == "--update" || a == "-U") {
         if let Err(e) = sdm_app::update::run_cli() {
             eprintln!("Update error: {e}");

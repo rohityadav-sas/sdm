@@ -372,7 +372,10 @@ export component MainWindow inherits Window {
                             if root.downloads.length == 0 : VerticalLayout {
                                 alignment: center;
                                 spacing: 8px;
-                                Image { source: @image-url("icons/inbox.svg"); colorize: Theme.faint; width: 72px; height: 72px; }
+                                HorizontalLayout {
+                                    alignment: center;
+                                    Image { source: @image-url("icons/inbox.svg"); colorize: Theme.faint; width: 72px; height: 72px; }
+                                }
                                 Text { text: root.empty-titles[root.page]; color: Theme.fg; font-size: 22px; font-weight: 700; horizontal-alignment: center; }
                                 Text { text: root.empty-texts[root.page]; color: Theme.dim; font-size: 14px; horizontal-alignment: center; }
                             }
