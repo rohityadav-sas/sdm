@@ -9,4 +9,4 @@ Terminal=false
 Categories=Network;FileTransfer;
 Keywords=download;downloader;manager;sdm;idm;
 StartupWMClass=sdm
-StartupNotify=false
+StartupNotify=true

@@ -16,3 +16,6 @@ dist/
 *.part
 *.part.json
 *.tmp
+
+generate-context.sh
+PROJECT_CONTEXT.md
