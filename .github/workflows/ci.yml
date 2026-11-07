@@ -1,5 +1,4 @@
 # Build and test on all three desktop platforms; build Linux/Windows/macOS release archives on tags.
-# (Written without being able to run it locally - treat the first run as a shakedown.)
 name: ci
 on:
   push: { branches: [main], tags: ['v*'] }
@@ -10,7 +9,13 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, windows-latest, macos-latest]
+        include:
+          - os: ubuntu-latest
+            target: linux-x86_64
+          - os: windows-latest
+            target: windows-x86_64
+          - os: macos-latest
+            target: macos-arm64
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
@@ -33,9 +38,9 @@ jobs:
           mkdir -p dist/sdm
           for b in sdm sdm-host; do cp target/release/$b* dist/sdm/ 2>/dev/null || true; done
           cp -r packaging README.md dist/sdm/
-          cd dist && (tar -czf sdm-${{ runner.os }}.tar.gz sdm || 7z a sdm-${{ runner.os }}.zip sdm)
+          cd dist && 7z a sdm-${{ matrix.target }}.zip sdm
       - uses: actions/upload-artifact@v4
-        with: { name: sdm-${{ runner.os }}, path: 'dist/sdm-*' }
+        with: { name: sdm-${{ matrix.target }}, path: 'dist/sdm-*.zip' }
 
   rpm:
     if: startsWith(github.ref, 'refs/tags/v')

@@ -2,33 +2,11 @@ use crate::protocol::{Reply, Request};
 use crate::server::{info_path, Info};
 use std::io::{BufRead, BufReader, Write};
 use std::net::{Ipv4Addr, SocketAddr, TcpStream};
-use std::path::{Path, PathBuf};
-use std::sync::Mutex;
-use std::time::{Duration, Instant, SystemTime};
-
-static INFO_CACHE: Mutex<Option<(PathBuf, SystemTime, Info)>> = Mutex::new(None);
+use std::path::Path;
+use std::time::{Duration, Instant};
 
 pub fn read_info(dir: &Path) -> Option<Info> {
-    let path = info_path(dir);
-    let mtime = std::fs::metadata(&path).ok()?.modified().ok();
-    if let (Some(m), Ok(guard)) = (mtime, INFO_CACHE.lock()) {
-        if let Some((ref cached_path, cached_mtime, ref info)) = *guard {
-            if cached_path == &path && cached_mtime == m {
-                return Some(info.clone());
-            }
-        }
-    }
-    let info: Info = serde_json::from_slice(&std::fs::read(&path).ok()?).ok()?;
-    if let (Some(m), Ok(mut guard)) = (mtime, INFO_CACHE.lock()) {
-        *guard = Some((path, m, info.clone()));
-    }
-    Some(info)
-}
-
-fn invalidate_info_cache() {
-    if let Ok(mut guard) = INFO_CACHE.lock() {
-        *guard = None;
-    }
+    serde_json::from_slice(&std::fs::read(info_path(dir)).ok()?).ok()
 }
 
 /// Send one request to the running app. Errors if no app is listening.
@@ -36,13 +14,7 @@ pub fn send(dir: &Path, mut req: Request, timeout: Duration) -> std::io::Result<
     let info = read_info(dir).ok_or_else(|| std::io::Error::new(std::io::ErrorKind::NotFound, "SDM is not running"))?;
     req.token = info.token;
     let addr = SocketAddr::from((Ipv4Addr::LOCALHOST, info.port));
-    let stream = match TcpStream::connect_timeout(&addr, Duration::from_millis(800)) {
-        Ok(s) => s,
-        Err(e) => {
-            invalidate_info_cache();
-            return Err(e);
-        }
-    };
+    let stream = TcpStream::connect_timeout(&addr, Duration::from_millis(800))?;
     let _ = stream.set_nodelay(true);
     stream.set_read_timeout(Some(timeout))?;
     stream.set_write_timeout(Some(Duration::from_secs(5)))?;
@@ -51,11 +23,7 @@ pub fn send(dir: &Path, mut req: Request, timeout: Duration) -> std::io::Result<
     (&stream).write_all(&line)?;
     let mut reply = String::new();
     BufReader::new(&stream).read_line(&mut reply)?;
-    let parsed: Reply = serde_json::from_str(&reply).map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))?;
-    if !parsed.ok {
-        invalidate_info_cache();
-    }
-    Ok(parsed)
+    serde_json::from_str(&reply).map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))
 }
 
 /// Is an app instance answering right now?

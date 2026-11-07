@@ -29,6 +29,16 @@ impl Default for Options {
     }
 }
 
+pub fn fmt_size(b: u64) -> String {
+    const U: [&str; 4] = ["B", "KB", "MB", "GB"];
+    let (mut v, mut i) = (b as f64, 0);
+    while v >= 1024.0 && i < 3 {
+        v /= 1024.0;
+        i += 1;
+    }
+    if i == 0 { format!("{b} B") } else { format!("{v:.1} {}", U[i]) }
+}
+
 pub(crate) fn with_headers(mut rb: reqwest::RequestBuilder, h: &[(String, String)]) -> reqwest::RequestBuilder {
     for (k, v) in h {
         rb = rb.header(k.as_str(), v.as_str());
@@ -36,8 +46,48 @@ pub(crate) fn with_headers(mut rb: reqwest::RequestBuilder, h: &[(String, String
     rb
 }
 
+#[cfg(unix)]
+fn available_space(dir: &Path) -> Option<u64> {
+    use std::ffi::CString;
+    use std::os::unix::ffi::OsStrExt;
+    let c_path = CString::new(dir.as_os_str().as_bytes()).ok()?;
+    unsafe {
+        let mut st: libc::statvfs = std::mem::zeroed();
+        if libc::statvfs(c_path.as_ptr(), &mut st) == 0 {
+            Some((st.f_bavail as u64).saturating_mul(st.f_frsize as u64))
+        } else {
+            None
+        }
+    }
+}
+
+#[cfg(windows)]
+fn available_space(dir: &Path) -> Option<u64> {
+    use std::os::windows::ffi::OsStrExt;
+    let wide: Vec<u16> = dir.as_os_str().encode_wide().chain(std::iter::once(0)).collect();
+    let mut free: u64 = 0;
+    unsafe {
+        if windows_sys::Win32::Storage::FileSystem::GetDiskFreeSpaceExW(
+            wide.as_ptr(),
+            &mut free,
+            std::ptr::null_mut(),
+            std::ptr::null_mut(),
+        ) != 0
+        {
+            Some(free)
+        } else {
+            None
+        }
+    }
+}
+
+#[cfg(not(any(unix, windows)))]
+fn available_space(_dir: &Path) -> Option<u64> {
+    None
+}
+
 pub(crate) fn check_space(dir: &Path, need: u64) -> Result<()> {
-    if let Ok(avail) = fs2::available_space(dir) {
+    if let Some(avail) = available_space(dir) {
         if avail < need {
             anyhow::bail!("Not enough disk space: need {} MB, only {} MB free", need >> 20, avail >> 20);
         }

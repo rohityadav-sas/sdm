@@ -1,65 +1,13 @@
 //! End-to-end: real UI + real engine + local HTTP server, headless.
-use slint::platform::software_renderer::{MinimalSoftwareWindow, RepaintBufferType};
-use slint::platform::{Clipboard, Key, Platform, WindowAdapter, WindowEvent};
-use slint::{ComponentHandle, Model, PhysicalSize};
-use std::cell::RefCell;
-use std::path::{Path, PathBuf};
-use std::rc::Rc;
-use std::time::{Duration, Instant};
+use slint::platform::software_renderer::MinimalSoftwareWindow;
+use slint::platform::{Key, WindowEvent};
+use slint::{ComponentHandle, Model};
+use std::path::Path;
 use sdm_app::devserver::{expected, serve};
 use sdm_app::{store, App, Config, MainWindow};
 
-thread_local! {
-    static CLIP: RefCell<Option<String>> = RefCell::new(None);
-    static START: Instant = Instant::now();
-}
-
-struct P(Rc<MinimalSoftwareWindow>);
-impl Platform for P {
-    fn create_window_adapter(&self) -> Result<Rc<dyn WindowAdapter>, slint::PlatformError> {
-        Ok(self.0.clone())
-    }
-    fn duration_since_start(&self) -> Duration {
-        START.with(|s| s.elapsed())
-    }
-    fn clipboard_text(&self, _c: Clipboard) -> Option<String> {
-        CLIP.with(|c| c.borrow().clone())
-    }
-    fn set_clipboard_text(&self, text: &str, _c: Clipboard) {
-        CLIP.with(|c| *c.borrow_mut() = Some(text.to_string()));
-    }
-}
-
-fn pump_until(timeout_s: u64, what: &str, mut cond: impl FnMut() -> bool) {
-    let end = Instant::now() + Duration::from_secs(timeout_s);
-    while Instant::now() < end {
-        slint::platform::update_timers_and_animations();
-        if cond() {
-            return;
-        }
-        std::thread::sleep(Duration::from_millis(15));
-    }
-    panic!("timed out waiting for: {what}");
-}
-
-fn pump_for(ms: u64) {
-    let end = Instant::now() + Duration::from_millis(ms);
-    while Instant::now() < end {
-        slint::platform::update_timers_and_animations();
-        std::thread::sleep(Duration::from_millis(15));
-    }
-}
-
-fn tmp(name: &str) -> PathBuf {
-    let d = std::env::temp_dir().join(format!("sdm-app-{name}-{}", std::process::id()));
-    let _ = std::fs::remove_dir_all(&d);
-    std::fs::create_dir_all(&d).unwrap();
-    d
-}
-
-fn status(ui: &MainWindow, i: usize) -> String {
-    ui.get_downloads().row_data(i).map(|d| d.status.to_string()).unwrap_or_default()
-}
+mod common;
+use common::*;
 
 fn ctrl_v(win: &MinimalSoftwareWindow) {
     win.dispatch_event(WindowEvent::KeyPressed { text: Key::Control.into() });
@@ -76,12 +24,9 @@ fn files_in(dir: &Path) -> Vec<String> {
 
 #[test]
 fn full_flow() {
-    let win = MinimalSoftwareWindow::new(RepaintBufferType::NewBuffer);
-    slint::platform::set_platform(Box::new(P(win.clone()))).unwrap();
-    win.set_size(PhysicalSize::new(1040, 720));
-
-    let data = tmp("data");
-    let dl = tmp("dl");
+    let win = setup();
+    let data = tmp("app-data");
+    let dl = tmp("app-dl");
     let fast = serve(12_000_000, 0);
     let slow = serve(4_000_000, 2_000_000); // 2 MB/s per connection
 
@@ -125,11 +70,11 @@ fn full_flow() {
         // pause / resume on a throttled server (2 connections ≈ 4 MB/s total)
         ui.set_default_conns(2);
         ui.invoke_add_quick(format!("{slow}/files/slow.bin").into());
-        pump_until(10, "progress", || ui.get_downloads().row_data(0).map(|d| d.progress > 0.15).unwrap_or(false));
+        pump_until(10, "progress", || progress(&ui, 0) > 0.15);
         let id = ui.get_downloads().row_data(0).unwrap().id;
         ui.invoke_toggle(id);
         pump_until(5, "paused", || status(&ui, 0) == "paused");
-        let at_pause = ui.get_downloads().row_data(0).unwrap().progress;
+        let at_pause = progress(&ui, 0);
         assert!(at_pause > 0.1 && at_pause < 1.0, "paused at {at_pause}");
         pump_for(300);
         assert_eq!(status(&ui, 0), "paused", "stays paused");
@@ -145,7 +90,7 @@ fn full_flow() {
         // removing a paused/unfinished download cleans its partial files
         ui.set_default_conns(2);
         ui.invoke_add_quick(format!("{slow}/files/partial.bin").into());
-        pump_until(10, "progress", || ui.get_downloads().row_data(0).map(|d| d.progress > 0.1).unwrap_or(false));
+        pump_until(10, "progress", || progress(&ui, 0) > 0.1);
         let id = ui.get_downloads().row_data(0).unwrap().id;
         ui.invoke_remove(id);
         pump_for(1200);
@@ -168,7 +113,7 @@ fn full_flow() {
         pump_for(100);
         ui.invoke_add_quick(format!("{fast}/files/limited.bin").into());
         pump_for(2000);
-        let p = ui.get_downloads().row_data(0).unwrap().progress;
+        let p = progress(&ui, 0);
         assert!(p > 0.0 && p < 0.25, "limited download progressed to {p}");
         ui.set_speed_limit(0);
         pump_until(30, "limit lifted, download finishes", || status(&ui, 0) == "done");

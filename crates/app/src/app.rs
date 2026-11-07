@@ -15,7 +15,7 @@ use std::cell::{Cell, RefCell};
 use std::collections::VecDeque;
 use std::path::PathBuf;
 use std::rc::{Rc, Weak as RcWeak};
-use std::sync::atomic::{AtomicU64, AtomicU8, AtomicUsize, Ordering::Relaxed};
+use std::sync::atomic::{AtomicU64, AtomicU8, AtomicUsize, Ordering::{Acquire, Relaxed, Release}};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
@@ -40,15 +40,20 @@ const DONE: u8 = 1;
 const PAUSED: u8 = 2;
 const FAILED: u8 = 3;
 
+#[derive(Default)]
+struct TaskMeta {
+    name: Option<String>,
+    path: Option<PathBuf>,
+    err: String,
+}
+
 /// Shared between a download task (any thread) and the UI timer.
 struct Task {
     downloaded: AtomicU64,
     total: AtomicU64,
     conns: AtomicUsize,
     state: AtomicU8,
-    name: Mutex<Option<String>>,
-    path: Mutex<Option<PathBuf>>,
-    err: Mutex<String>,
+    meta: Mutex<TaskMeta>,
     cancel: CancellationToken,
 }
 
@@ -82,7 +87,7 @@ struct Item {
     task: Option<Arc<Task>>,
     headers: Vec<(String, String)>,
     last_pushed_done: u64,
-    last_pushed_speed_fmt: String,
+    last_pushed_speed_fmt: SharedString,
     last_pushed_st: St,
     last_pushed_active: usize,
 }
@@ -171,7 +176,6 @@ fn to_row(it: &Item) -> DownloadItem {
         total: if it.total > 0 { fmt_size(it.total) } else { String::new() }.into(),
         speed: speed.into(),
         detail: detail.into(),
-        conns: it.conns,
     }
 }
 
@@ -190,7 +194,7 @@ impl Inner {
         let it = &mut self.items[i];
         let row = to_row(it);
         it.last_pushed_done = it.done;
-        it.last_pushed_speed_fmt = row.speed.to_string();
+        it.last_pushed_speed_fmt = row.speed.clone();
         it.last_pushed_st = it.st;
         it.last_pushed_active = it.active;
         self.model.set_row_data(i, row);
@@ -312,9 +316,7 @@ impl Inner {
             total: AtomicU64::new(self.items[idx].total),
             conns: AtomicUsize::new(0),
             state: AtomicU8::new(RUNNING),
-            name: Mutex::new(None),
-            path: Mutex::new(None),
-            err: Mutex::new(String::new()),
+            meta: Mutex::new(TaskMeta::default()),
             cancel: CancellationToken::new(),
         });
         let it = &mut self.items[idx];
@@ -325,8 +327,9 @@ impl Inner {
             limiter: Some(self.limiter.clone()),
             headers: it.headers.clone(),
             on_info: Some(Arc::new(move |i: Info| {
-                *t_info.name.lock().unwrap() = Some(i.filename);
-                *t_info.path.lock().unwrap() = Some(i.path);
+                let mut m = t_info.meta.lock().unwrap();
+                m.name = Some(i.filename);
+                m.path = Some(i.path);
                 if let Some(t) = i.total {
                     t_info.total.store(t, Relaxed);
                 }
@@ -345,13 +348,13 @@ impl Inner {
             .await;
             match res {
                 Ok(Outcome::Done(path)) => {
-                    *t.path.lock().unwrap() = Some(path);
-                    t.state.store(DONE, Relaxed);
+                    t.meta.lock().unwrap().path = Some(path);
+                    t.state.store(DONE, Release);
                 }
-                Ok(Outcome::Paused) => t.state.store(PAUSED, Relaxed),
+                Ok(Outcome::Paused) => t.state.store(PAUSED, Release),
                 Err(e) => {
-                    *t.err.lock().unwrap() = friendly(&e);
-                    t.state.store(FAILED, Relaxed);
+                    t.meta.lock().unwrap().err = friendly(&e);
+                    t.state.store(FAILED, Release);
                 }
             }
         });
@@ -402,7 +405,7 @@ impl Inner {
             id, url, name, dir, path: None, total: 0, done: 0, conns, st: St::Running, pausing: false, resume_after: false,
             speed: 0.0, last_done: 0, active: 0, err: String::new(), finished: None, task: None, headers,
             last_pushed_done: 0,
-            last_pushed_speed_fmt: String::new(),
+            last_pushed_speed_fmt: SharedString::new(),
             last_pushed_st: St::Running,
             last_pushed_active: 0,
         };
@@ -688,18 +691,26 @@ impl Inner {
             if let Some(t) = &it.task {
                 t.cancel.cancel();
             }
+            let task = it.task;
+            let known_path = it.path;
             // Drop leftovers of an unfinished download once its task has stopped.
-            if let Some(p) = it.path.clone() {
-                self.rt.spawn(async move {
-                    tokio::time::sleep(Duration::from_millis(600)).await;
+            self.rt.spawn(async move {
+                if let Some(t) = &task {
+                    let deadline = Instant::now() + Duration::from_secs(2);
+                    while t.state.load(Acquire) == RUNNING && Instant::now() < deadline {
+                        tokio::time::sleep(Duration::from_millis(15)).await;
+                    }
+                }
+                let p = known_path.or_else(|| task.and_then(|t| t.meta.lock().unwrap().path.take()));
+                if let Some(p) = p {
                     let mut part = p.clone().into_os_string();
                     part.push(".part");
                     let mut meta = p.into_os_string();
                     meta.push(".part.json");
-                    let _ = std::fs::remove_file(part);
-                    let _ = std::fs::remove_file(meta);
-                });
-            }
+                    let _ = tokio::fs::remove_file(part).await;
+                    let _ = tokio::fs::remove_file(meta).await;
+                }
+            });
         }
         self.pump_queue();
         self.refresh_stats();
@@ -776,10 +787,11 @@ impl Inner {
             {
                 let it = &mut self.items[i];
                 if it.path.is_none() {
-                    if let Some(n) = t.name.lock().unwrap().clone() {
+                    let mut m = t.meta.lock().unwrap();
+                    if let Some(n) = m.name.take() {
                         it.name = n;
                     }
-                    if let Some(p) = t.path.lock().unwrap().clone() {
+                    if let Some(p) = m.path.clone() {
                         it.path = Some(p);
                     }
                 }
@@ -791,9 +803,12 @@ impl Inner {
                 it.last_done = d;
                 it.done = d;
                 it.active = t.conns.load(Relaxed);
-                match t.state.load(Relaxed) {
+                match t.state.load(Acquire) {
                     RUNNING => {}
                     DONE => {
+                        if let Some(p) = t.meta.lock().unwrap().path.take() {
+                            it.path = Some(p);
+                        }
                         it.st = St::Done;
                         it.done = it.total.max(d);
                         it.speed = 0.0;
@@ -815,7 +830,7 @@ impl Inner {
                     }
                     _ => {
                         it.st = St::Error;
-                        it.err = t.err.lock().unwrap().clone();
+                        it.err = std::mem::take(&mut t.meta.lock().unwrap().err);
                         it.speed = 0.0;
                         it.task = None;
                         it.pausing = false;
@@ -831,11 +846,10 @@ impl Inner {
 
             let should_push = {
                 let it = &self.items[i];
-                let speed_str = fmt_speed(it.speed);
                 state_changed
                     || it.st != it.last_pushed_st
                     || it.active != it.last_pushed_active
-                    || speed_str != it.last_pushed_speed_fmt
+                    || fmt_speed(it.speed) != it.last_pushed_speed_fmt.as_str()
                     || (it.done.saturating_sub(it.last_pushed_done) >= 65536)
                     || (it.total > 0 && ((it.done as f64 - it.last_pushed_done as f64) / (it.total as f64) >= 0.002))
                     || it.task.is_none()
@@ -884,17 +898,17 @@ impl Inner {
         }
         let deadline = Instant::now() + Duration::from_millis(2000);
         while Instant::now() < deadline
-            && self.items.iter().any(|i| i.task.as_ref().is_some_and(|t| t.state.load(Relaxed) == RUNNING))
+            && self.items.iter().any(|i| i.task.as_ref().is_some_and(|t| t.state.load(Acquire) == RUNNING))
         {
             std::thread::sleep(Duration::from_millis(20));
         }
         for it in &mut self.items {
             if let Some(t) = it.task.take() {
                 it.done = t.downloaded.load(Relaxed);
-                if t.state.load(Relaxed) == DONE {
+                if t.state.load(Acquire) == DONE {
                     it.st = St::Done;
                     it.finished = Some(now_secs());
-                    if let Some(p) = t.path.lock().unwrap().clone() {
+                    if let Some(p) = t.meta.lock().unwrap().path.take() {
                         it.path = Some(p);
                     }
                     it.done = it.total.max(it.done);
@@ -921,8 +935,9 @@ impl Inner {
 
     fn check_update_silent(&mut self) {
         crate::update::touch_update_check(&self.cfg.data_dir);
+        let client = self.client.clone();
         self.rt.spawn(async move {
-            if let Ok(info) = crate::update::check_for_update(None).await {
+            if let Ok(info) = crate::update::check_for_update(Some(&client), None).await {
                 if info.is_newer {
                     let _ = slint::invoke_from_event_loop(move || {
                         with_inner(|inner| {
@@ -944,8 +959,9 @@ impl Inner {
             ui.set_update_state(1);
             ui.set_update_status("Checking for updates…".into());
         }
+        let client = self.client.clone();
         self.rt.spawn(async move {
-            let res = crate::update::check_for_update(None).await;
+            let res = crate::update::check_for_update(Some(&client), None).await;
             let _ = slint::invoke_from_event_loop(move || {
                 with_inner(|inner| inner.on_update_checked(res));
             });
@@ -996,8 +1012,9 @@ impl Inner {
         }
         self.toast("Downloading update…");
         let ver = info.latest_version.clone();
+        let client = self.client.clone();
         self.rt.spawn(async move {
-            let res = crate::update::download_and_apply(&info).await;
+            let res = crate::update::download_and_apply(Some(&client), &info).await;
             let _ = slint::invoke_from_event_loop(move || {
                 with_inner(|inner| inner.on_update_applied(res, &ver));
             });
@@ -1138,7 +1155,7 @@ impl App {
                 task: None,
                 headers: s.headers.clone(),
                 last_pushed_done: s.done,
-                last_pushed_speed_fmt: String::new(),
+                last_pushed_speed_fmt: SharedString::new(),
                 last_pushed_st: if s.complete { St::Done } else { St::Paused },
                 last_pushed_active: 0,
             })
@@ -1285,9 +1302,8 @@ impl App {
                     let pick = rfd::AsyncFileDialog::new().set_title("Choose download folder").set_directory(start).pick_folder().await;
                     let _ = slint::invoke_from_event_loop(move || {
                         let Some(ui) = w2.upgrade() else { return };
-                        match pick {
-                            Some(f) => ui.set_download_folder(f.path().to_string_lossy().into_owned().into()),
-                            None => {}
+                        if let Some(f) = pick {
+                            ui.set_download_folder(f.path().to_string_lossy().into_owned().into());
                         }
                     });
                 });

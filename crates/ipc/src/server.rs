@@ -1,6 +1,6 @@
 use crate::protocol::{Reply, Request};
 use serde::{Deserialize, Serialize};
-use std::io::{BufRead, BufReader, Write};
+use std::io::{BufRead, BufReader, Read, Write};
 use std::net::{Ipv4Addr, SocketAddr, TcpListener, TcpStream};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
@@ -54,7 +54,7 @@ impl Server {
         let port = listener.local_addr()?.port();
         let token = random_token();
         let info = Info { port, token: token.clone(), pid: std::process::id(), version: version.to_string() };
-        write_private(&info_path(dir), &serde_json::to_vec(&info).unwrap())?;
+        crate::write_private(&info_path(dir), &serde_json::to_vec(&info).unwrap())?;
 
         let stop = Arc::new(AtomicBool::new(false));
         let stop2 = stop.clone();
@@ -104,7 +104,7 @@ fn serve_one(stream: TcpStream, token: &str, handler: &Handler) -> std::io::Resu
     stream.set_write_timeout(Some(Duration::from_secs(10)))?;
     let mut line = String::new();
     // Requests are one JSON line; cap the size so a stray client can't eat memory.
-    BufReader::new((&stream).take_limited(1 << 20)).read_line(&mut line)?;
+    BufReader::new((&stream).take(1 << 20)).read_line(&mut line)?;
     let reply = match serde_json::from_str::<Request>(&line) {
         Err(_) => Reply::err("bad request"),
         Ok(req) if !constant_time_eq(req.token.as_bytes(), token.as_bytes()) => Reply::err("unauthorized"),
@@ -113,32 +113,4 @@ fn serve_one(stream: TcpStream, token: &str, handler: &Handler) -> std::io::Resu
     let mut out = serde_json::to_vec(&reply).unwrap();
     out.push(b'\n');
     (&stream).write_all(&out)
-}
-
-trait TakeLimited {
-    fn take_limited(self, n: u64) -> std::io::Take<Self>
-    where
-        Self: Sized + std::io::Read;
-}
-impl<T: std::io::Read> TakeLimited for T {
-    fn take_limited(self, n: u64) -> std::io::Take<Self> {
-        std::io::Read::take(self, n)
-    }
-}
-
-#[cfg(unix)]
-fn write_private(path: &Path, bytes: &[u8]) -> std::io::Result<()> {
-    use std::os::unix::fs::OpenOptionsExt;
-    let tmp = path.with_extension("tmp");
-    let mut f = std::fs::OpenOptions::new().write(true).create(true).truncate(true).mode(0o600).open(&tmp)?;
-    f.write_all(bytes)?;
-    drop(f);
-    std::fs::rename(tmp, path)
-}
-
-#[cfg(not(unix))]
-fn write_private(path: &Path, bytes: &[u8]) -> std::io::Result<()> {
-    let tmp = path.with_extension("tmp");
-    std::fs::write(&tmp, bytes)?;
-    std::fs::rename(tmp, path)
 }

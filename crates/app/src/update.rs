@@ -4,7 +4,7 @@
 
 use anyhow::Result;
 use std::io::Read;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 pub const GITHUB_REPO: &str = "rohityadav-sas/sdm";
 pub const MAX_BINARY_SIZE: u64 = 64 * 1024 * 1024;
@@ -75,13 +75,20 @@ pub fn check_permissions() -> Result<(), String> {
 }
 
 /// Query GitHub Releases API for the latest version.
-pub async fn check_for_update(repo_override: Option<&str>) -> Result<UpdateInfo, String> {
+pub async fn check_for_update(client: Option<&engine::Client>, repo_override: Option<&str>) -> Result<UpdateInfo, String> {
     let env_repo = std::env::var("SDM_UPDATE_REPO").ok();
     let repo = repo_override.or(env_repo.as_deref()).unwrap_or(GITHUB_REPO);
     let api_url = format!("https://api.github.com/repos/{repo}/releases/latest");
     let current = current_version();
 
-    let client = engine::client().map_err(|e| format!("Failed to create HTTP client: {e}"))?;
+    let owned_client;
+    let client = match client {
+        Some(c) => c,
+        None => {
+            owned_client = engine::client().map_err(|e| format!("Failed to create HTTP client: {e}"))?;
+            &owned_client
+        }
+    };
     let resp = client
         .get(&api_url)
         .header("User-Agent", format!("sdm/{current}"))
@@ -123,19 +130,7 @@ pub async fn check_for_update(repo_override: Option<&str>) -> Result<UpdateInfo,
 
     let asset = assets
         .iter()
-        .find(|a| {
-            a["name"]
-                .as_str()
-                .is_some_and(|name| name.ends_with(suffix) || (name.contains(std::env::consts::OS) && name.ends_with(".zip")))
-        })
-        .or_else(|| {
-            // fallback: find any matching os archive
-            assets.iter().find(|a| {
-                a["name"]
-                    .as_str()
-                    .is_some_and(|name| name.contains(std::env::consts::OS))
-            })
-        });
+        .find(|a| a["name"].as_str().is_some_and(|name| name.ends_with(suffix)));
 
     let (asset_name, download_url) = if let Some(a) = asset {
         (
@@ -156,31 +151,25 @@ pub async fn check_for_update(repo_override: Option<&str>) -> Result<UpdateInfo,
 }
 
 /// Check if enough time has passed since the last background update check (24 hours).
-pub fn should_check_background(data_dir: &std::path::Path) -> bool {
+pub fn should_check_background(data_dir: &Path) -> bool {
     let stamp_path = data_dir.join(".last_update_check");
-    if let Ok(meta) = std::fs::metadata(&stamp_path) {
-        if let Ok(modified) = meta.modified() {
-            if let Ok(elapsed) = modified.elapsed() {
-                if elapsed < std::time::Duration::from_secs(24 * 3600) {
-                    return false;
-                }
-            }
-        }
-    }
-    true
+    std::fs::metadata(&stamp_path)
+        .and_then(|m| m.modified())
+        .and_then(|t| t.elapsed().map_err(std::io::Error::other))
+        .map(|elapsed| elapsed >= std::time::Duration::from_secs(24 * 3600))
+        .unwrap_or(true)
 }
 
 /// Mark that a background check was performed.
-pub fn touch_update_check(data_dir: &std::path::Path) {
-    let stamp_path = data_dir.join(".last_update_check");
-    let _ = std::fs::write(&stamp_path, b"");
+pub fn touch_update_check(data_dir: &Path) {
+    let _ = std::fs::write(data_dir.join(".last_update_check"), b"");
 }
 
 /// Extract an entry from a zip archive directly to a target file on disk.
 fn extract_entry_to_path<R: Read + std::io::Seek>(
     archive: &mut zip::ZipArchive<R>,
     filename: &str,
-    target: &std::path::Path,
+    target: &Path,
 ) -> Result<bool, String> {
     for i in 0..archive.len() {
         let mut file = archive.by_index(i).map_err(|e| format!("Zip error: {e}"))?;
@@ -198,65 +187,14 @@ fn extract_entry_to_path<R: Read + std::io::Seek>(
     Ok(false)
 }
 
-/// Extract a file from an in-memory ZIP archive.
-#[cfg(test)]
-fn extract_file(zip_bytes: &[u8], filename: &str) -> Result<Option<Vec<u8>>, String> {
-    let reader = std::io::Cursor::new(zip_bytes);
-    let mut archive = zip::ZipArchive::new(reader).map_err(|e| format!("Invalid zip archive: {e}"))?;
-    for i in 0..archive.len() {
-        let mut file = archive.by_index(i).map_err(|e| format!("Zip error: {e}"))?;
-        let name = file.name().to_string();
-        let matches = name == filename || name.ends_with(&format!("/{filename}")) || name.ends_with(&format!("\\{filename}"));
-        if matches {
-            if file.size() > MAX_BINARY_SIZE {
-                return Err(format!("File '{name}' exceeds size limit"));
-            }
-            let mut buf = Vec::with_capacity(file.size() as usize);
-            file.read_to_end(&mut buf).map_err(|e| format!("Failed to read '{name}': {e}"))?;
-            return Ok(Some(buf));
-        }
-    }
-    Ok(None)
-}
-
-/// Download the update archive and replace current binaries.
-pub async fn download_and_apply(info: &UpdateInfo) -> Result<(), String> {
-    if info.download_url.is_empty() {
-        return Err(format!("No release asset found for {} {}", std::env::consts::OS, std::env::consts::ARCH));
-    }
-
-    check_permissions()?;
-
-    let client = engine::client().map_err(|e| format!("Failed to create client: {e}"))?;
-    let resp = client
-        .get(&info.download_url)
-        .header("User-Agent", format!("sdm/{}", info.current_version))
-        .send()
-        .await
-        .map_err(|e| format!("Failed to download update: {e}"))?;
-
-    if !resp.status().is_success() {
-        return Err(format!("Download failed with HTTP {}", resp.status()));
-    }
-
-    // Stream the archive to a temp file on disk instead of buffering the entire zip in memory
-    let temp_zip = std::env::temp_dir().join(format!("sdm-update-{}.zip", std::process::id()));
-    let mut file = std::fs::File::create(&temp_zip).map_err(|e| format!("Failed to create temp zip: {e}"))?;
-    let mut resp = resp;
-    while let Some(chunk) = resp.chunk().await.map_err(|e| format!("Download stream error: {e}"))? {
-        use std::io::Write;
-        file.write_all(&chunk).map_err(|e| format!("Failed to write temp zip: {e}"))?;
-    }
-    drop(file);
-
-    let zip_file = std::fs::File::open(&temp_zip).map_err(|e| format!("Failed to open temp zip: {e}"))?;
+fn apply_archive(temp_zip: &Path) -> Result<(), String> {
+    let zip_file = std::fs::File::open(temp_zip).map_err(|e| format!("Failed to open temp zip: {e}"))?;
     let mut archive = zip::ZipArchive::new(zip_file).map_err(|e| format!("Invalid zip archive: {e}"))?;
 
     let current_exe = std::env::current_exe().map_err(|e| format!("Cannot locate current exe: {e}"))?;
     let temp_path = std::env::temp_dir().join(format!("sdm-update-{}", std::process::id()));
 
     if !extract_entry_to_path(&mut archive, binary_name(), &temp_path)? {
-        let _ = std::fs::remove_file(&temp_zip);
         return Err(format!("'{}' not found in update archive", binary_name()));
     }
 
@@ -268,10 +206,7 @@ pub async fn download_and_apply(info: &UpdateInfo) -> Result<(), String> {
 
     let replace_res = self_replace::self_replace(&temp_path).map_err(|e| format!("Could not replace executable: {e}"));
     let _ = std::fs::remove_file(&temp_path);
-    if let Err(e) = replace_res {
-        let _ = std::fs::remove_file(&temp_zip);
-        return Err(e);
-    }
+    replace_res?;
 
     // Also replace sdm-host if present in archive
     let host_target = match current_exe.parent() {
@@ -289,8 +224,51 @@ pub async fn download_and_apply(info: &UpdateInfo) -> Result<(), String> {
         let _ = std::fs::remove_file(&temp_host);
     }
 
-    let _ = std::fs::remove_file(&temp_zip);
     Ok(())
+}
+
+/// Download the update archive and replace current binaries.
+pub async fn download_and_apply(client: Option<&engine::Client>, info: &UpdateInfo) -> Result<(), String> {
+    if info.download_url.is_empty() {
+        return Err(format!("No release asset found for {} {}", std::env::consts::OS, std::env::consts::ARCH));
+    }
+
+    check_permissions()?;
+
+    let owned_client;
+    let client = match client {
+        Some(c) => c,
+        None => {
+            owned_client = engine::client().map_err(|e| format!("Failed to create client: {e}"))?;
+            &owned_client
+        }
+    };
+    let mut resp = client
+        .get(&info.download_url)
+        .header("User-Agent", format!("sdm/{}", info.current_version))
+        .send()
+        .await
+        .map_err(|e| format!("Failed to download update: {e}"))?;
+
+    if !resp.status().is_success() {
+        return Err(format!("Download failed with HTTP {}", resp.status()));
+    }
+
+    // Stream the archive to a temp file on disk
+    let temp_zip = std::env::temp_dir().join(format!("sdm-update-{}.zip", std::process::id()));
+    let mut file = tokio::fs::File::create(&temp_zip).await.map_err(|e| format!("Failed to create temp zip: {e}"))?;
+    while let Some(chunk) = resp.chunk().await.map_err(|e| format!("Download stream error: {e}"))? {
+        use tokio::io::AsyncWriteExt;
+        file.write_all(&chunk).await.map_err(|e| format!("Failed to write temp zip: {e}"))?;
+    }
+    drop(file);
+
+    let zip_path = temp_zip.clone();
+    let res = tokio::task::spawn_blocking(move || apply_archive(&zip_path))
+        .await
+        .map_err(|e| format!("Update task failed: {e}"))?;
+    let _ = std::fs::remove_file(&temp_zip);
+    res
 }
 
 /// Restart the application using the updated executable.
@@ -310,14 +288,15 @@ pub fn run_cli() -> Result<(), String> {
         .build()
         .map_err(|e| format!("Runtime error: {e}"))?;
 
-    let info = rt.block_on(check_for_update(None))?;
+    let client = engine::client().map_err(|e| format!("Failed to create HTTP client: {e}"))?;
+    let info = rt.block_on(check_for_update(Some(&client), None))?;
     if !info.is_newer {
         println!("SDM is already up to date (v{}).", info.current_version);
         return Ok(());
     }
 
     println!("Updating SDM v{} -> v{} ({})...", info.current_version, info.latest_version, info.asset_name);
-    rt.block_on(download_and_apply(&info))?;
+    rt.block_on(download_and_apply(Some(&client), &info))?;
     println!("Successfully updated to v{}!", info.latest_version);
     Ok(())
 }
@@ -349,16 +328,17 @@ mod tests {
         {
             let mut writer = zip::ZipWriter::new(std::io::Cursor::new(&mut buf));
             let options = zip::write::SimpleFileOptions::default();
-            writer.start_file("sdm", options).unwrap();
+            writer.start_file("nested/sdm", options).unwrap();
             writer.write_all(b"fake-binary-content").unwrap();
             writer.finish().unwrap();
         }
 
-        let extracted = extract_file(&buf, "sdm").unwrap();
-        assert_eq!(extracted, Some(b"fake-binary-content".to_vec()));
+        let mut archive = zip::ZipArchive::new(std::io::Cursor::new(&buf)).unwrap();
+        let target = std::env::temp_dir().join(format!("sdm-zip-test-{}", std::process::id()));
+        assert!(extract_entry_to_path(&mut archive, "sdm", &target).unwrap());
+        assert_eq!(std::fs::read(&target).unwrap(), b"fake-binary-content");
+        let _ = std::fs::remove_file(&target);
 
-        let missing = extract_file(&buf, "sdm-host").unwrap();
-        assert_eq!(missing, None);
+        assert!(!extract_entry_to_path(&mut archive, "sdm-host", &target).unwrap());
     }
 }
-

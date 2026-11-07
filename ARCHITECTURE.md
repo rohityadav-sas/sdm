@@ -19,7 +19,7 @@ Entry point: `engine::download(client, url, dir, &Options, &CancellationToken, o
 1. `probe` sends `GET Range: bytes=0-0` (HEAD is unreliable): size, range support, ETag, file name. 416 = empty file.
 2. `locate` picks the target path (resumes a matching `.part.json`, else `name (N).ext`).
 3. Multi-connection path (`multi.rs`) when the server supports ranges and the file is >= 1 MiB:
-   - the file is preallocated; each worker owns a byte range `Seg` and writes with positional writes (`pwrite`) from a 256 KiB buffer (flushed at least every 250 ms),
+   - the file is preallocated; each worker owns a byte range `Seg` and writes with positional writes (`pwrite`) from a 512 KiB buffer (flushed at least every 250 ms),
    - HTTP/1.1 only, so every worker is its own TCP connection,
    - dynamic splitting: an idle worker steals half of the largest remaining segment (`Ctx::steal`),
    - `Busy` errors (429/503/connect failures) make workers give their segment back and exit (`try_shrink`), and `Retry-After` is honoured,

@@ -1,7 +1,8 @@
 [package]
 name = "sdm-app"
-version = "1.0.0"
-edition = "2021"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
 build = "build.rs"
 
 [lib]
@@ -12,23 +13,23 @@ name = "sdm"
 path = "src/main.rs"
 
 [dependencies]
-anyhow = "1"
-ipc = { path = "../ipc" }
+anyhow.workspace = true
+dirs.workspace = true
 engine = { path = "../engine" }
-slint = { version = "~1.16", default-features = false, features = ["std", "backend-winit", "renderer-femtovg", "renderer-software", "compat-1-2", "unstable-winit-030"] }
-tokio = { version = "1", features = ["rt-multi-thread", "time"] }
-serde = { version = "1", features = ["derive"] }
-serde_json = "1"
-dirs = "5"
-rfd = { version = "0.15", default-features = false, features = ["xdg-portal", "tokio"] }
-self-replace = "1.5"
-semver = "1"
-zip = { version = "2", default-features = false, features = ["deflate"] }
+ipc = { path = "../ipc" }
+rfd.workspace = true
+self-replace.workspace = true
+semver.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+slint = { workspace = true, features = ["std", "backend-winit", "renderer-femtovg", "renderer-software", "compat-1-2", "unstable-winit-030"] }
+tokio.workspace = true
+zip.workspace = true
 
 [build-dependencies]
-slint-build = "~1.16"
+slint-build.workspace = true
 
 [dev-dependencies]
-slint = { version = "~1.16", default-features = false, features = ["std", "renderer-software", "software-renderer-systemfonts", "compat-1-2"] }
-tokio = { version = "1", features = ["rt-multi-thread", "time", "net", "io-util", "macros"] }
-png = "0.17"
+png.workspace = true
+slint = { workspace = true, features = ["std", "renderer-software", "software-renderer-systemfonts", "compat-1-2"] }
+tokio = { workspace = true, features = ["net", "io-util", "macros"] }

@@ -5,18 +5,17 @@
 use crate::probe::Probe;
 use crate::types::*;
 use anyhow::{anyhow, bail, Result};
-use fs2::FileExt;
 use futures_util::StreamExt;
 use reqwest::header::{CONTENT_RANGE, RANGE, RETRY_AFTER};
 use reqwest::{Client, StatusCode};
 use std::fs::{File, OpenOptions};
-use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering::Relaxed};
+use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering::{Acquire, Relaxed, Release}};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 use tokio::task::JoinSet;
 use tokio_util::sync::CancellationToken;
 
-const BUF: usize = 256 * 1024; // per-connection write buffer
+const BUF: usize = 512 * 1024; // per-connection write buffer
 const MIN_INIT_SEG: u64 = 1 << 20; // don't start segments smaller than 1 MiB
 const MIN_SPLIT: u64 = 512 * 1024; // remaining bytes required to split a segment
 const MAX_RETRIES: u32 = 12;
@@ -90,20 +89,19 @@ impl Ctx {
     fn steal(&self) -> Option<Arc<Seg>> {
         let mut list = self.segs.lock().unwrap();
         for s in list.iter() {
-            if !s.active.load(Relaxed) && s.written.load(Relaxed) < s.end() {
-                s.active.store(true, Relaxed);
+            if !s.active.load(Acquire) && s.written.load(Relaxed) < s.end() {
+                s.active.store(true, Release);
                 return Some(s.clone());
             }
         }
-        let mut best: Option<(Arc<Seg>, u64)> = None;
-        for s in list.iter().filter(|s| s.active.load(Relaxed)) {
-            let g = s.st.lock().unwrap();
-            let rem = g.1.saturating_sub(g.0);
-            if best.as_ref().map_or(true, |(_, r)| rem > *r) {
-                best = Some((s.clone(), rem));
-            }
-        }
-        let (victim, _) = best?;
+        let victim = list
+            .iter()
+            .filter(|s| s.active.load(Acquire))
+            .max_by_key(|s| {
+                let g = s.st.lock().unwrap();
+                g.1.saturating_sub(g.0)
+            })?
+            .clone();
         let (mid, old_end) = {
             let mut g = victim.st.lock().unwrap();
             let rem = g.1.saturating_sub(g.0);
@@ -116,7 +114,7 @@ impl Ctx {
             (mid, old_end)
         };
         let ns = Seg::new(mid, old_end);
-        ns.active.store(true, Relaxed);
+        ns.active.store(true, Release);
         list.push(ns.clone());
         Some(ns)
     }
@@ -334,7 +332,7 @@ async fn run_segment(ctx: &Ctx, seg: &Seg) -> Result<Flow> {
                 // Server refuses this many connections: hand the segment back and
                 // run with fewer workers instead of hammering it.
                 if busy.is_some() && fails >= 2 && ctx.try_shrink() {
-                    seg.active.store(false, Relaxed);
+                    seg.active.store(false, Release);
                     return Ok(Flow::Released);
                 }
                 if fails > MAX_RETRIES {
@@ -390,16 +388,20 @@ pub(crate) async fn run(
             }
         }
     }
-    let (file, ranges) = match resumed {
-        Some(r) => (OpenOptions::new().write(true).open(&paths.part)?, r),
-        None => {
-            check_space(paths.dest.parent().unwrap_or(std::path::Path::new(".")), total)?;
-            let f = File::create(&paths.part)?;
-            f.set_len(total)?;
-            let _ = f.allocate(total);
-            (f, initial_split(total, conns))
+    let part_path = paths.part.clone();
+    let dest_parent = paths.dest.parent().unwrap_or(std::path::Path::new(".")).to_path_buf();
+    let (file, ranges) = tokio::task::spawn_blocking(move || -> Result<(File, Vec<(u64, u64)>)> {
+        match resumed {
+            Some(r) => Ok((OpenOptions::new().write(true).open(&part_path)?, r)),
+            None => {
+                check_space(&dest_parent, total)?;
+                let f = File::create(&part_path)?;
+                f.set_len(total)?;
+                Ok((f, initial_split(total, conns)))
+            }
         }
-    };
+    })
+    .await??;
     let left: u64 = ranges.iter().map(|(a, b)| b - a).sum();
 
     let ctx = Arc::new(Ctx {

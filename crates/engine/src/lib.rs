@@ -5,10 +5,10 @@ mod single;
 mod types;
 
 pub use limiter::RateLimiter;
-pub use probe::{probe, probe_with, Probe};
-pub use tokio_util::sync::CancellationToken;
+pub use probe::{name_from_url, probe, probe_with, Probe};
 pub use reqwest::{Client, Url};
-pub use types::{Info, Options, Outcome, Progress};
+pub use tokio_util::sync::CancellationToken;
+pub use types::{fmt_size, Info, Options, Outcome, Progress};
 
 use anyhow::Result;
 use std::path::Path;
@@ -23,7 +23,7 @@ const MIN_MULTI_SIZE: u64 = 1 << 20;
 pub fn client() -> Result<reqwest::Client> {
     Ok(reqwest::Client::builder()
         .http1_only()
-        .user_agent("Mozilla/5.0 (X11; Linux x86_64) SDM/0.2")
+        .user_agent("Mozilla/5.0 (X11; Linux x86_64) SDM/1.0")
         .redirect(reqwest::redirect::Policy::limited(10))
         .connect_timeout(Duration::from_secs(15))
         .read_timeout(Duration::from_secs(30))

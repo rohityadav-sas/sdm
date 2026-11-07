@@ -6,8 +6,6 @@ use std::io;
 use std::path::{Path, PathBuf};
 
 pub const HOST_NAME: &str = "com.sdm.host";
-/// Registered by the app under its old name (Velo); removed on setup.
-const LEGACY_HOST_NAME: &str = "com.velo.host";
 /// Fixed ID of the Chromium extension (derived from the key in its manifest).
 pub const CHROMIUM_EXTENSION_ID: &str = env!("SDM_EXTENSION_ID");
 pub const FIREFOX_EXTENSION_ID: &str = "sdm@local.sdm";
@@ -72,6 +70,18 @@ pub fn browsers() -> Vec<Browser> {
     vec![b("Google Chrome", Kind::Chromium), b("Microsoft Edge", Kind::Chromium), b("Brave", Kind::Chromium), b("Firefox", Kind::Firefox)]
 }
 
+fn manifest_file(b: &Browser) -> PathBuf {
+    let suffix = if cfg!(windows) {
+        match b.kind {
+            Kind::Chromium => ".chromium",
+            Kind::Firefox => ".firefox",
+        }
+    } else {
+        ""
+    };
+    b.manifests.join(format!("{HOST_NAME}{suffix}.json"))
+}
+
 pub fn manifest_json(kind: Kind, host_exe: &Path) -> serde_json::Value {
     let mut m = json!({
         "name": HOST_NAME,
@@ -94,9 +104,8 @@ pub fn install_native_host(host_exe: &Path) -> io::Result<Vec<String>> {
         if !b.detect.exists() {
             continue;
         }
-        let _ = std::fs::remove_file(b.manifests.join(format!("{LEGACY_HOST_NAME}.json")));
         std::fs::create_dir_all(&b.manifests)?;
-        let file = b.manifests.join(format!("{HOST_NAME}{}.json", if cfg!(windows) { format!(".{:?}", b.kind).to_lowercase() } else { String::new() }));
+        let file = manifest_file(&b);
         std::fs::write(&file, serde_json::to_vec_pretty(&manifest_json(b.kind, host_exe)).unwrap())?;
         #[cfg(target_os = "windows")]
         register_windows(&b, &file)?;
@@ -108,8 +117,7 @@ pub fn install_native_host(host_exe: &Path) -> io::Result<Vec<String>> {
 pub fn uninstall_native_host() -> Vec<String> {
     let mut done = Vec::new();
     for b in browsers() {
-        let _ = std::fs::remove_file(b.manifests.join(format!("{LEGACY_HOST_NAME}.json")));
-        let file = b.manifests.join(format!("{HOST_NAME}.json"));
+        let file = manifest_file(&b);
         if std::fs::remove_file(&file).is_ok() {
             done.push(b.name.to_string());
         }
@@ -119,7 +127,7 @@ pub fn uninstall_native_host() -> Vec<String> {
 
 /// Is the host registered with at least one installed browser?
 pub fn is_installed() -> bool {
-    browsers().iter().any(|b| b.manifests.join(format!("{HOST_NAME}.json")).exists())
+    browsers().iter().any(|b| manifest_file(b).exists())
 }
 
 #[cfg(target_os = "windows")]

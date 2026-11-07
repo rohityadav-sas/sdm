@@ -1,5 +1,8 @@
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
+use std::sync::Mutex;
+
+static SAVE_LOCK: Mutex<()> = Mutex::new(());
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
 #[serde(default)]
@@ -60,56 +63,25 @@ fn read<T: for<'a> Deserialize<'a>>(path: &Path) -> Option<T> {
     serde_json::from_slice(&std::fs::read(path).ok()?).ok()
 }
 
-fn write_atomic(path: &Path, bytes: &[u8]) {
-    if let Some(dir) = path.parent() {
-        let _ = std::fs::create_dir_all(dir);
-    }
-    let tmp = path.with_extension("tmp");
-    if std::fs::write(&tmp, bytes).is_ok() {
-        let _ = std::fs::rename(&tmp, path);
-    }
-}
-
 pub fn load_settings(dir: &Path) -> Settings {
     read(&dir.join("settings.json")).unwrap_or_default()
 }
+
 pub fn save_settings(dir: &Path, s: &Settings) {
+    let _g = SAVE_LOCK.lock().unwrap_or_else(|e| e.into_inner());
     if let Ok(b) = serde_json::to_vec_pretty(s) {
-        write_atomic(&dir.join("settings.json"), &b);
+        let _ = ipc::write_atomic(&dir.join("settings.json"), &b);
     }
 }
+
 pub fn load_history(dir: &Path) -> Vec<Saved> {
     read(&dir.join("downloads.json")).unwrap_or_default()
 }
+
 pub fn save_history(dir: &Path, items: &[Saved]) {
+    let _g = SAVE_LOCK.lock().unwrap_or_else(|e| e.into_inner());
     if let Ok(b) = serde_json::to_vec(items) {
         // May contain session cookies: readable by the user only.
-        write_private(&dir.join("downloads.json"), &b);
+        let _ = ipc::write_private(&dir.join("downloads.json"), &b);
     }
-}
-
-#[cfg(unix)]
-fn write_private(path: &Path, bytes: &[u8]) {
-    use std::io::Write;
-    use std::os::unix::fs::OpenOptionsExt;
-    if let Some(dir) = path.parent() {
-        let _ = std::fs::create_dir_all(dir);
-    }
-    let tmp = path.with_extension("tmp");
-    let ok = std::fs::OpenOptions::new()
-        .write(true)
-        .create(true)
-        .truncate(true)
-        .mode(0o600)
-        .open(&tmp)
-        .and_then(|mut f| f.write_all(bytes))
-        .is_ok();
-    if ok {
-        let _ = std::fs::rename(&tmp, path);
-    }
-}
-
-#[cfg(not(unix))]
-fn write_private(path: &Path, bytes: &[u8]) {
-    write_atomic(path, bytes);
 }

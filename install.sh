@@ -7,6 +7,10 @@ REPO="rohityadav-sas/sdm"
 BIN="sdm"
 INSTALL_DIR="$HOME/.local/bin"
 
+say() { printf 'sdm: %s\n' "$*"; }
+die() { printf 'sdm: error: %s\n' "$*" >&2; exit 1; }
+have() { command -v "$1" >/dev/null 2>&1; }
+
 # --- platform detection -----------------------------------------------------
 case "$(uname -s)" in
   Linux)  os="linux" ;;
@@ -41,11 +45,6 @@ if [ -n "$release" ]; then
   url="$(printf '%s' "$release" \
     | grep -o "\"browser_download_url\": *\"[^\"]*${suffix}\"" \
     | head -n 1 | cut -d '"' -f 4 || true)"
-  if [ -z "$url" ]; then
-    url="$(printf '%s' "$release" \
-      | grep -o "\"browser_download_url\": *\"[^\"]*${os}[^\"]*\"" \
-      | head -n 1 | cut -d '"' -f 4 || true)"
-  fi
 fi
 
 # Fallback to local source build if release asset is not yet available and cargo exists
@@ -64,7 +63,7 @@ if [ -z "$url" ]; then
       fi
     done
     if [ "$os" = "linux" ] && [ -d "$tmp_src/packaging" ]; then
-      PREFIX="$(dirname "$INSTALL_DIR")" "$tmp_src/packaging/install.sh" >/dev/null 2>&1 || true
+      SDM_BIN_DIR="$INSTALL_DIR" PREFIX="$(dirname "$INSTALL_DIR")" "$tmp_src/packaging/install.sh" >/dev/null 2>&1 || true
     fi
     say "Installed sdm to $INSTALL_DIR/$BIN"
     say "Run: $BIN"
@@ -85,10 +84,8 @@ if have unzip; then
   unzip -q -o "$tmp/sdm.zip" -d "$tmp/out" || die "could not extract the archive"
 elif have bsdtar; then
   mkdir -p "$tmp/out" && bsdtar -xf "$tmp/sdm.zip" -C "$tmp/out" || die "could not extract the archive"
-elif have tar && printf '%s' "$url" | grep -q '\.tar\.gz$'; then
-  mkdir -p "$tmp/out" && tar -xzf "$tmp/sdm.zip" -C "$tmp/out" || die "could not extract the archive"
 else
-  die "unzip or tar is required to extract the release"
+  die "unzip or bsdtar is required to extract the release"
 fi
 
 # Locate binary
@@ -116,7 +113,7 @@ done
 if [ "$os" = "linux" ]; then
   pkg_dir="$(find "$tmp/out" -type d -name "packaging" 2>/dev/null | head -n 1 || true)"
   if [ -n "$pkg_dir" ] && [ -x "$pkg_dir/install.sh" ]; then
-    PREFIX="$(dirname "$INSTALL_DIR")" "$pkg_dir/install.sh" >/dev/null 2>&1 || true
+    SDM_BIN_DIR="$INSTALL_DIR" PREFIX="$(dirname "$INSTALL_DIR")" "$pkg_dir/install.sh" >/dev/null 2>&1 || true
   fi
 fi
 
@@ -139,4 +136,3 @@ case ":$PATH:" in
     fi
     ;;
 esac
-

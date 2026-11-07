@@ -23,26 +23,23 @@ pub async fn probe_with(client: &Client, url: &str, headers: &[(String, String)]
         .send()
         .await?;
     // 416 on "bytes=0-0" means an empty file ("Content-Range: bytes */0").
-    let empty_file = resp.status() == StatusCode::RANGE_NOT_SATISFIABLE;
+    let status = resp.status();
+    let empty_file = status == StatusCode::RANGE_NOT_SATISFIABLE;
     if !empty_file {
         resp.error_for_status_ref()?;
     }
 
     let h = resp.headers();
-    let (total, accepts_ranges) = if empty_file {
-        let total = h
-            .get(CONTENT_RANGE)
+    let parse_range_total = || {
+        h.get(CONTENT_RANGE)
             .and_then(|v| v.to_str().ok())
             .and_then(|s| s.rsplit('/').next())
             .and_then(|s| s.trim().parse::<u64>().ok())
-            .or(Some(0));
-        (total, false)
-    } else if resp.status() == StatusCode::PARTIAL_CONTENT {
-        let total = h
-            .get(CONTENT_RANGE)
-            .and_then(|v| v.to_str().ok())
-            .and_then(|s| s.rsplit('/').next())
-            .and_then(|s| s.trim().parse::<u64>().ok());
+    };
+    let (total, accepts_ranges) = if empty_file {
+        (parse_range_total().or(Some(0)), false)
+    } else if status == StatusCode::PARTIAL_CONTENT {
+        let total = parse_range_total();
         (total, total.is_some())
     } else {
         (resp.content_length(), false)
@@ -51,15 +48,21 @@ pub async fn probe_with(client: &Client, url: &str, headers: &[(String, String)]
     let text = |name| h.get(name).and_then(|v| v.to_str().ok()).map(str::to_owned);
     let etag = text(ETAG);
     let last_modified = text(LAST_MODIFIED);
+    let final_url = resp.url().to_string();
     let filename = text(CONTENT_DISPOSITION)
         .and_then(|cd| filename_from_disposition(&cd))
-        .or_else(|| filename_from_url(resp.url()))
+        .or_else(|| filename_from_parsed_url(resp.url()))
         .map(|n| sanitize(&n))
         .filter(|n| !n.is_empty())
         .unwrap_or_else(|| "download".to_string());
 
+    // Drain the 1-byte body on 206 so hyper returns the warm TCP+TLS socket to the pool.
+    if status == StatusCode::PARTIAL_CONTENT {
+        let _ = resp.bytes().await;
+    }
+
     Ok(Probe {
-        final_url: resp.url().to_string(),
+        final_url,
         total,
         accepts_ranges,
         filename,
@@ -80,12 +83,25 @@ fn filename_from_disposition(cd: &str) -> Option<String> {
     Some(v.to_string())
 }
 
-fn filename_from_url(url: &reqwest::Url) -> Option<String> {
-    let seg = url.path_segments()?.last()?;
+fn filename_from_parsed_url(url: &reqwest::Url) -> Option<String> {
+    let seg = url.path_segments()?.next_back()?;
     if seg.is_empty() {
         return None;
     }
     Some(percent_decode_str(seg).decode_utf8_lossy().into_owned())
+}
+
+/// Extract a clean display filename from an unprobed URL string.
+pub fn name_from_url(url: &str) -> String {
+    let path = url.split(['?', '#']).next().unwrap_or(url);
+    let seg = path.rsplit('/').next().unwrap_or("");
+    let decoded = percent_decode_str(seg).decode_utf8_lossy();
+    let cleaned: String = decoded
+        .chars()
+        .map(|c| if c.is_control() || c == '/' || c == '\\' { '_' } else { c })
+        .collect();
+    let trimmed = cleaned.trim();
+    if trimmed.is_empty() { "download".into() } else { trimmed.to_string() }
 }
 
 const RESERVED: [&str; 22] = [
@@ -103,13 +119,10 @@ pub(crate) fn sanitize(name: &str) -> String {
     // Keep names well under common 255-byte limits, preserving the extension.
     if n.len() > 180 {
         let (stem, ext) = match n.rfind('.') {
-            Some(i) if n.len() - i <= 12 => (n[..i].to_string(), n[i..].to_string()),
-            _ => (n.clone(), String::new()),
+            Some(i) if n.len() - i <= 12 => (&n[..i], &n[i..]),
+            _ => (n.as_str(), ""),
         };
-        let mut cut = 180usize.saturating_sub(ext.len());
-        while cut > 0 && !stem.is_char_boundary(cut) {
-            cut -= 1;
-        }
+        let cut = stem.floor_char_boundary(180usize.saturating_sub(ext.len()));
         n = format!("{}{}", &stem[..cut], ext);
     }
     let stem_upper = n.split('.').next().unwrap_or("").to_ascii_uppercase();

@@ -1,21 +1,29 @@
 use std::sync::atomic::{AtomicU64, Ordering::Relaxed};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
+use tokio::sync::Notify;
 
 /// Shared bandwidth limiter (bytes per second, 0 = unlimited). One instance can
 /// be shared by every connection of every download to enforce a global cap.
 pub struct RateLimiter {
     rate: AtomicU64,
     next: Mutex<Instant>,
+    wake: Notify,
 }
 
 impl RateLimiter {
     pub fn new(bytes_per_sec: u64) -> Arc<Self> {
-        Arc::new(Self { rate: AtomicU64::new(bytes_per_sec), next: Mutex::new(Instant::now()) })
+        Arc::new(Self {
+            rate: AtomicU64::new(bytes_per_sec),
+            next: Mutex::new(Instant::now()),
+            wake: Notify::new(),
+        })
     }
 
     pub fn set_rate(&self, bytes_per_sec: u64) {
         self.rate.store(bytes_per_sec, Relaxed);
+        *self.next.lock().unwrap() = Instant::now();
+        self.wake.notify_waiters();
     }
 
     pub fn rate(&self) -> u64 {
@@ -28,6 +36,7 @@ impl RateLimiter {
         if rate == 0 {
             return;
         }
+        let notified = self.wake.notified();
         let wait = {
             let mut next = self.next.lock().unwrap();
             let now = Instant::now();
@@ -36,7 +45,10 @@ impl RateLimiter {
             start - now
         };
         if !wait.is_zero() {
-            tokio::time::sleep(wait).await;
+            tokio::select! {
+                _ = tokio::time::sleep(wait) => {}
+                _ = notified => {}
+            }
         }
     }
 }

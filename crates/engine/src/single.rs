@@ -81,13 +81,21 @@ pub(crate) async fn run(
                 i = stream.next() => i,
             };
             let Some(chunk) = item else { break };
-            let c = chunk.context("connection lost")?;
+            let c = match chunk {
+                Ok(c) => c,
+                Err(e) => {
+                    let _ = w.flush().await;
+                    return Err(e).context("connection lost");
+                }
+            };
             if let Some(l) = &opts.limiter {
                 tokio::select! {
                     biased;
                     _ = cancel.cancelled() => {
                         w.write_all(&c).await?;
                         w.flush().await?;
+                        downloaded += c.len() as u64;
+                        on_progress(Progress { downloaded, total: p.total, connections: 1 });
                         return Ok(Outcome::Paused);
                     }
                     _ = l.acquire(c.len()) => {}

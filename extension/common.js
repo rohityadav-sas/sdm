@@ -8,61 +8,44 @@
   const api = () => (typeof browser !== 'undefined' ? browser : chrome);
   const isPromiseApi = () => typeof browser !== 'undefined';
 
-  // Call api[ns][method](...args) and always get a Promise back.
-  function call(ns, method, ...args) {
-    const target = api()[ns];
+  // Invoke target[method](...args) and always return a Promise.
+  function invoke(target, method, ...args) {
     if (isPromiseApi()) return Promise.resolve(target[method](...args));
     return new Promise((resolve, reject) => {
       target[method](...args, (result) => {
-        const err = chrome.runtime.lastError;
+        const err = chrome.runtime && chrome.runtime.lastError;
         if (err) reject(new Error(err.message));
         else resolve(result);
       });
     });
   }
 
+  function call(ns, method, ...args) {
+    return invoke(api()[ns], method, ...args);
+  }
+
   function sendNative(message) {
-    const rt = api().runtime;
-    if (isPromiseApi()) return Promise.resolve(rt.sendNativeMessage(HOST, message));
-    return new Promise((resolve, reject) => {
-      rt.sendNativeMessage(HOST, message, (resp) => {
-        const err = chrome.runtime.lastError;
-        if (err) reject(new Error(err.message));
-        else resolve(resp);
-      });
-    });
+    return invoke(api().runtime, 'sendNativeMessage', HOST, message);
   }
 
-  function getSettings() {
-    return new Promise((resolve) => {
-      const done = (v) => resolve(Object.assign({}, DEFAULTS, v || {}));
-      try {
-        const local = api().storage.local;
-        if (isPromiseApi()) local.get(DEFAULTS).then(done, () => done({}));
-        else local.get(DEFAULTS, done);
-      } catch (_) { done({}); }
-    });
+  async function getSettings() {
+    try {
+      const v = await invoke(api().storage.local, 'get', DEFAULTS);
+      return Object.assign({}, DEFAULTS, v || {});
+    } catch (_) {
+      return Object.assign({}, DEFAULTS);
+    }
   }
 
-  function setSettings(patch) {
-    return new Promise((resolve) => {
-      try {
-        if (isPromiseApi()) api().storage.local.set(patch).then(resolve, resolve);
-        else api().storage.local.set(patch, resolve);
-      } catch (_) { resolve(); }
-    });
+  async function setSettings(patch) {
+    try {
+      await invoke(api().storage.local, 'set', patch);
+    } catch (_) { /* ignore */ }
   }
 
   async function cookieHeader(url) {
     try {
-      const cookies = await new Promise((resolve, reject) => {
-        const c = api().cookies;
-        if (isPromiseApi()) c.getAll({ url }).then(resolve, reject);
-        else c.getAll({ url }, (r) => {
-          const err = chrome.runtime.lastError;
-          if (err) reject(new Error(err.message)); else resolve(r);
-        });
-      });
+      const cookies = await invoke(api().cookies, 'getAll', { url });
       return (cookies || []).map((c) => c.name + '=' + c.value).join('; ');
     } catch (_) {
       return '';

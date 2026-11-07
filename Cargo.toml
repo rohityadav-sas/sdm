@@ -2,6 +2,32 @@
 members = ["crates/engine", "crates/cli", "crates/app", "crates/ipc", "crates/host"]
 resolver = "2"
 
+[workspace.package]
+version = "1.0.0"
+edition = "2021"
+license = "GPL-3.0-only"
+
+[workspace.dependencies]
+anyhow = "1"
+dirs = "5"
+futures-util = "0.3"
+getrandom = "0.2"
+libc = "0.2"
+percent-encoding = "2"
+png = "0.17"
+reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "stream"] }
+rfd = { version = "0.15", default-features = false, features = ["xdg-portal", "tokio"] }
+self-replace = "1.5"
+semver = "1"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+slint = { version = "~1.16", default-features = false }
+slint-build = "~1.16"
+tokio = { version = "1", features = ["rt-multi-thread", "time"] }
+tokio-util = { version = "0.7", default-features = false }
+windows-sys = { version = "0.61", features = ["Win32_Storage_FileSystem"] }
+zip = { version = "2", default-features = false, features = ["deflate"] }
+
 [profile.release]
 opt-level = "s"
 lto = true

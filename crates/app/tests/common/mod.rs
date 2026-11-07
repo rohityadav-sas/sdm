@@ -1,9 +1,10 @@
 //! Headless Slint platform shared by the end-to-end tests: software renderer,
-//! real-time clock, a manually pumped event loop and a "did the app quit?" flag.
+//! real-time clock, clipboard, manually pumped event loop and a "did the app quit?" flag.
 #![allow(dead_code)]
 use slint::platform::software_renderer::{MinimalSoftwareWindow, RepaintBufferType};
-use slint::platform::{EventLoopProxy, Platform, WindowAdapter};
+use slint::platform::{Clipboard, EventLoopProxy, Platform, WindowAdapter};
 use slint::{Model, PhysicalSize};
+use std::cell::RefCell;
 use std::collections::VecDeque;
 use std::rc::Rc;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -14,7 +15,10 @@ use sdm_app::MainWindow;
 type Job = Box<dyn FnOnce() + Send>;
 static QUEUE: OnceLock<Arc<Mutex<VecDeque<Job>>>> = OnceLock::new();
 pub static QUIT: AtomicBool = AtomicBool::new(false);
-thread_local! { static START: Instant = Instant::now(); }
+thread_local! {
+    pub static CLIP: RefCell<Option<String>> = const { RefCell::new(None) };
+    static START: Instant = Instant::now();
+}
 
 struct Proxy;
 impl EventLoopProxy for Proxy {
@@ -38,6 +42,12 @@ impl Platform for P {
     }
     fn new_event_loop_proxy(&self) -> Option<Box<dyn EventLoopProxy>> {
         Some(Box::new(Proxy))
+    }
+    fn clipboard_text(&self, _c: Clipboard) -> Option<String> {
+        CLIP.with(|c| c.borrow().clone())
+    }
+    fn set_clipboard_text(&self, text: &str, _c: Clipboard) {
+        CLIP.with(|c| *c.borrow_mut() = Some(text.to_string()));
     }
 }
 

@@ -1,44 +1,50 @@
-use anyhow::Result;
-use clap::Parser;
-use engine::{CancellationToken, Options, Outcome, RateLimiter};
+use anyhow::{bail, Context, Result};
+use engine::{fmt_size, CancellationToken, Options, Outcome, RateLimiter};
 use std::io::Write;
 use std::path::PathBuf;
 use std::time::{Duration, Instant};
 
-#[derive(Parser)]
-#[command(name = "sdm", about = "SDM download manager (CLI test harness)")]
 struct Args {
     url: String,
-    /// Download folder (default: your Downloads folder)
-    #[arg(short, long)]
     dir: Option<PathBuf>,
-    /// Parallel connections, 1-32
-    #[arg(short = 'c', long, default_value_t = 8)]
     connections: usize,
-    /// Delete the file when finished (for speed benchmarks)
-    #[arg(long)]
     discard: bool,
-    /// Speed limit in MB/s (0 = unlimited)
-    #[arg(long, default_value_t = 0.0)]
     limit: f64,
-    /// Extra request header, e.g. -H "Cookie: a=b" (repeatable)
-    #[arg(short = 'H', long = "header")]
     headers: Vec<String>,
 }
 
-fn human(b: f64) -> String {
-    const U: [&str; 4] = ["B", "KB", "MB", "GB"];
-    let (mut v, mut i) = (b, 0);
-    while v >= 1024.0 && i < 3 {
-        v /= 1024.0;
-        i += 1;
+fn parse_args() -> Result<Args> {
+    let mut url = None;
+    let mut dir = None;
+    let mut connections = 8usize;
+    let mut discard = false;
+    let mut limit = 0.0f64;
+    let mut headers = Vec::new();
+
+    let mut it = std::env::args().skip(1);
+    while let Some(a) = it.next() {
+        match a.as_str() {
+            "-d" | "--dir" => dir = Some(PathBuf::from(it.next().context("missing value for --dir")?)),
+            "-c" | "--connections" => {
+                connections = it.next().context("missing value for --connections")?.parse()?
+            }
+            "--discard" => discard = true,
+            "--limit" => limit = it.next().context("missing value for --limit")?.parse()?,
+            "-H" | "--header" => headers.push(it.next().context("missing value for --header")?),
+            "-h" | "--help" => {
+                println!("Usage: sdm-cli [OPTIONS] <URL>\n  -d, --dir <DIR>\n  -c, --connections <N>\n      --discard\n      --limit <MB/s>\n  -H, --header <HEADER>");
+                std::process::exit(0);
+            }
+            s if !s.starts_with('-') && url.is_none() => url = Some(s.to_string()),
+            other => bail!("unknown argument: {other}"),
+        }
     }
-    format!("{v:.1} {}", U[i])
+    Ok(Args { url: url.context("missing <URL>")?, dir, connections, discard, limit, headers })
 }
 
 #[tokio::main]
 async fn main() -> Result<()> {
-    let args = Args::parse();
+    let args = parse_args()?;
     let dir = args.dir.or_else(dirs::download_dir).unwrap_or_else(|| ".".into());
     let client = engine::client()?;
     let headers = args
@@ -70,9 +76,9 @@ async fn main() -> Result<()> {
             return;
         }
         last = Instant::now();
-        let speed = p.downloaded.saturating_sub(b0) as f64 / t0.elapsed().as_secs_f64().max(0.001);
+        let speed = (p.downloaded.saturating_sub(b0) as f64 / t0.elapsed().as_secs_f64().max(0.001)) as u64;
         let pct = p.total.map(|t| format!("{:5.1}%", p.downloaded as f64 * 100.0 / t as f64)).unwrap_or_default();
-        print!("\r{pct}  {}  {}/s  [{} conn]   ", human(p.downloaded as f64), human(speed), p.connections);
+        print!("\r{pct}  {}  {}/s  [{} conn]   ", fmt_size(p.downloaded), fmt_size(speed), p.connections);
         let _ = std::io::stdout().flush();
     })
     .await;
@@ -82,8 +88,8 @@ async fn main() -> Result<()> {
             let (t0, b0) = base.unwrap_or((Instant::now(), 0));
             let size = std::fs::metadata(&path).map(|m| m.len()).unwrap_or(0);
             let secs = t0.elapsed().as_secs_f64().max(0.001);
-            let avg = size.saturating_sub(b0) as f64 / secs;
-            println!("\nDone: {}  ({} in {:.1}s, avg {}/s)", path.display(), human(size as f64), secs, human(avg));
+            let avg = (size.saturating_sub(b0) as f64 / secs) as u64;
+            println!("\nDone: {}  ({} in {:.1}s, avg {}/s)", path.display(), fmt_size(size), secs, fmt_size(avg));
             if args.discard {
                 let _ = std::fs::remove_file(&path);
             }
