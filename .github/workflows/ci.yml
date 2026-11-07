@@ -1,7 +1,9 @@
 # Build and test on all three desktop platforms; build Linux/Windows/macOS release archives on tags.
 name: ci
 on:
-  push: { branches: [main], tags: ['v*'] }
+  push:
+    branches: [main]
+    tags: ['v*']
   pull_request:
 
 jobs:
@@ -40,7 +42,9 @@ jobs:
           cp -r packaging README.md dist/sdm/
           cd dist && 7z a sdm-${{ matrix.target }}.zip sdm
       - uses: actions/upload-artifact@v4
-        with: { name: sdm-${{ matrix.target }}, path: 'dist/sdm-*.zip' }
+        with:
+          name: sdm-${{ matrix.target }}
+          path: dist/sdm-*.zip
 
   rpm:
     if: startsWith(github.ref, 'refs/tags/v')
@@ -51,4 +55,6 @@ jobs:
       - uses: actions/checkout@v4
       - run: packaging/make-rpm.sh
       - uses: actions/upload-artifact@v4
-        with: { name: sdm-rpm, path: '~/rpmbuild/RPMS/**/*.rpm' }
+        with:
+          name: sdm-rpm
+          path: ~/rpmbuild/RPMS/**/*.rpm
