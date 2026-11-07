@@ -1,17 +1,17 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="1200" height="360" viewBox="0 0 1200 360" role="img" aria-label="SDM — Smart Download Manager. Blazing-fast multi-connection download manager in Rust for Linux, macOS, and Windows.">
   <defs>
     <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
-      <stop offset="0" stop-color="#160b2c"/>
-      <stop offset=".55" stop-color="#35115f"/>
-      <stop offset="1" stop-color="#771d68"/>
+      <stop offset="0" stop-color="#071324"/>
+      <stop offset=".55" stop-color="#0d315c"/>
+      <stop offset="1" stop-color="#1a5fb4"/>
     </linearGradient>
     <radialGradient id="glow" cx=".5" cy=".5" r=".5">
-      <stop offset="0" stop-color="#a855f7" stop-opacity=".42"/>
-      <stop offset="1" stop-color="#a855f7" stop-opacity="0"/>
+      <stop offset="0" stop-color="#38bdf8" stop-opacity=".38"/>
+      <stop offset="1" stop-color="#38bdf8" stop-opacity="0"/>
     </radialGradient>
     <linearGradient id="bar" x1="0" y1="0" x2="1" y2="0">
-      <stop offset="0" stop-color="#a855f7"/>
-      <stop offset="1" stop-color="#f472b6"/>
+      <stop offset="0" stop-color="#38bdf8"/>
+      <stop offset="1" stop-color="#2dd4bf"/>
     </linearGradient>
     <clipPath id="clip">
       <rect width="1200" height="360" rx="24"/>
@@ -22,67 +22,66 @@
     <rect width="1200" height="360" fill="url(#bg)"/>
     <circle cx="920" cy="80" r="300" fill="url(#glow)"/>
 
-    <g fill="none" stroke="#d8b4fe" opacity=".12">
+    <g fill="none" stroke="#7dd3fc" opacity=".14">
       <circle cx="1050" cy="40" r="110"/>
       <circle cx="1050" cy="40" r="160"/>
       <circle cx="1050" cy="40" r="210"/>
     </g>
 
     <!-- Left Content -->
-    <text x="62" y="118" font-family="Segoe UI,Inter,Arial,sans-serif" font-size="58" font-weight="700" fill="#ffffff">
-      SDM<tspan fill="#d8b4fe" font-size="28" font-weight="500"> · Smart Download Manager</tspan>
+    <text x="58" y="116" font-family="Segoe UI,Inter,Cantarell,Arial,sans-serif" font-size="56" font-weight="700" fill="#ffffff">
+      SDM<tspan fill="#7dd3fc" font-size="25" font-weight="500"> · Smart Download Manager</tspan>
     </text>
-    <text x="62" y="170" font-family="Segoe UI,Inter,Arial,sans-serif" font-size="23" fill="#f3e8ff">
-      Blazing-fast multi-connection downloads for desktop &amp; browser.
+    <text x="58" y="166" font-family="Segoe UI,Inter,Cantarell,Arial,sans-serif" font-size="19.5" fill="#e0f2fe">
+      Fast multi-connection downloads for desktop &amp; browser.
     </text>
 
     <!-- Feature Pills -->
-    <g transform="translate(62 200)" font-family="Segoe UI,Inter,Arial,sans-serif" font-size="15" font-weight="600" text-anchor="middle" fill="#f3e8ff">
-      <rect width="152" height="36" rx="18" fill="#ffffff" fill-opacity=".09" stroke="#d8b4fe" stroke-opacity=".3"/>
-      <text x="76" y="23">Written in Rust</text>
+    <g transform="translate(58 198)" font-family="Segoe UI,Inter,Cantarell,Arial,sans-serif" font-size="14.5" font-weight="600" text-anchor="middle" fill="#e0f2fe">
+      <rect width="148" height="36" rx="18" fill="#ffffff" fill-opacity=".09" stroke="#7dd3fc" stroke-opacity=".32"/>
+      <text x="74" y="23">Written in Rust</text>
 
-      <rect x="164" width="156" height="36" rx="18" fill="#ffffff" fill-opacity=".09" stroke="#d8b4fe" stroke-opacity=".3"/>
-      <text x="242" y="23">32 Connections</text>
+      <rect x="160" width="152" height="36" rx="18" fill="#ffffff" fill-opacity=".09" stroke="#7dd3fc" stroke-opacity=".32"/>
+      <text x="236" y="23">32 Connections</text>
 
-      <rect x="332" width="176" height="36" rx="18" fill="#ffffff" fill-opacity=".09" stroke="#d8b4fe" stroke-opacity=".3"/>
-      <text x="420" y="23">Browser Extension</text>
+      <rect x="324" width="172" height="36" rx="18" fill="#ffffff" fill-opacity=".09" stroke="#7dd3fc" stroke-opacity=".32"/>
+      <text x="410" y="23">Browser Extension</text>
     </g>
 
     <!-- Right Preview Card -->
-    <g transform="translate(680 86)">
-      <rect width="456" height="178" rx="16" fill="#130a24" fill-opacity=".92" stroke="#c084fc" stroke-opacity=".35"/>
+    <g transform="translate(686 86)">
+      <rect width="452" height="178" rx="16" fill="#071120" fill-opacity=".92" stroke="#38bdf8" stroke-opacity=".35"/>
       <g transform="translate(20 20)">
         <circle r="4.5" fill="#fb7185"/>
         <circle cx="16" r="4.5" fill="#fbbf24"/>
         <circle cx="32" r="4.5" fill="#4ade80"/>
       </g>
-      <text x="434" y="24" text-anchor="end" font-family="Segoe UI,Inter,Arial,sans-serif" font-size="11" font-weight="600" letter-spacing="1.5" fill="#c084fc">
+      <text x="430" y="24" text-anchor="end" font-family="Segoe UI,Inter,Cantarell,Arial,sans-serif" font-size="11" font-weight="600" letter-spacing="1.5" fill="#7dd3fc">
         32 ACTIVE STREAMS
       </text>
 
-      <text x="22" y="60" font-family="Consolas,monospace" font-size="15" fill="#f3e8ff">fedora-workstation-44.iso</text>
-      <text x="434" y="60" text-anchor="end" font-family="Consolas,monospace" font-size="15" font-weight="700" fill="#4ade80">124.8 MB/s</text>
+      <text x="22" y="60" font-family="Consolas,DejaVu Sans Mono,monospace" font-size="14.5" fill="#e0f2fe">fedora-workstation-44.iso</text>
+      <text x="430" y="60" text-anchor="end" font-family="Consolas,DejaVu Sans Mono,monospace" font-size="14.5" font-weight="700" fill="#34d399">124.8 MB/s</text>
 
       <!-- Multi-Segment Range Bar -->
-      <rect x="22" y="76" width="412" height="12" rx="6" fill="#2a1748"/>
-      <rect x="22" y="76" width="118" height="12" rx="6" fill="url(#bar)"/>
-      <rect x="148" y="76" width="96" height="12" rx="4" fill="url(#bar)"/>
-      <rect x="252" y="76" width="88" height="12" rx="4" fill="url(#bar)"/>
-      <rect x="348" y="76" width="64" height="12" rx="4" fill="url(#bar)"/>
+      <rect x="22" y="76" width="408" height="12" rx="6" fill="#122847"/>
+      <rect x="22" y="76" width="116" height="12" rx="6" fill="url(#bar)"/>
+      <rect x="146" y="76" width="96" height="12" rx="4" fill="url(#bar)"/>
+      <rect x="250" y="76" width="86" height="12" rx="4" fill="url(#bar)"/>
+      <rect x="344" y="76" width="64" height="12" rx="4" fill="url(#bar)"/>
 
-      <text x="22" y="110" font-family="Segoe UI,Inter,Arial,sans-serif" font-size="13" fill="#d8b4fe">
+      <text x="22" y="110" font-family="Segoe UI,Inter,Cantarell,Arial,sans-serif" font-size="12.5" fill="#93c5fd">
         2.14 GB / 2.40 GB (89%) · Dynamic work stealing · ETA 00:02
       </text>
 
-      <line x1="22" y1="126" x2="434" y2="126" stroke="#c084fc" stroke-opacity=".18"/>
-      <text x="22" y="152" font-family="Consolas,monospace" font-size="15" fill="#e9d5ff">
-        <tspan fill="#f472b6">❯ </tspan>sdm https://dl.fedoraproject.org/fedora.iso
+      <line x1="22" y1="126" x2="430" y2="126" stroke="#38bdf8" stroke-opacity=".2"/>
+      <text x="22" y="152" font-family="Consolas,DejaVu Sans Mono,monospace" font-size="14" fill="#bae6fd">
+        <tspan fill="#38bdf8" font-weight="700">❯ </tspan>sdm https://example.com/fedora-44.iso
       </text>
-      <rect x="404" y="139" width="8" height="16" fill="#c084fc"/>
     </g>
 
     <!-- Wavy Bottom Layers -->
-    <path d="M0 293Q200 252 400 299T800 297T1200 281V360H0Z" fill="#a855f7" opacity=".16"/>
-    <path d="M0 320Q250 282 500 322T1000 318T1200 312V360H0Z" fill="#f472b6" opacity=".13"/>
+    <path d="M0 293Q200 252 400 299T800 297T1200 281V360H0Z" fill="#38bdf8" opacity=".16"/>
+    <path d="M0 320Q250 282 500 322T1000 318T1200 312V360H0Z" fill="#2dd4bf" opacity=".13"/>
   </g>
 </svg>

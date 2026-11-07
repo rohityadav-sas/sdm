@@ -3,9 +3,9 @@
 ![Smart Download Manager](assets/banner.svg)
 
 <p>
-  <img alt="Written in Rust" src="https://img.shields.io/badge/Written_in-Rust-702DA0?style=for-the-badge&logo=rust&logoColor=white">
-  <img alt="Latest release" src="https://img.shields.io/github/v/release/rohityadav-sas/sdm?style=for-the-badge&color=702DA0&logo=github&logoColor=white">
-  <img alt="Platforms" src="https://img.shields.io/badge/Platform-Linux_%7C_macOS_%7C_Windows-702DA0?style=for-the-badge">
+  <img alt="Written in Rust" src="https://img.shields.io/badge/Written_in-Rust-1A5FB4?style=for-the-badge&logo=rust&logoColor=white">
+  <img alt="Latest release" src="https://img.shields.io/github/v/release/rohityadav-sas/sdm?style=for-the-badge&color=0284C7&logo=github&logoColor=white">
+  <img alt="Platforms" src="https://img.shields.io/badge/Platform-Linux_%7C_macOS_%7C_Windows-0F315C?style=for-the-badge">
   <img alt="GPL-3.0 licensed" src="https://img.shields.io/badge/license-GPL--3.0-1F9D55?style=for-the-badge">
 </p>
 

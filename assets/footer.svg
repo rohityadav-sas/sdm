@@ -1,9 +1,9 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="1200" height="110" viewBox="0 0 1200 110" role="img" aria-label="Smart Download Manager footer wave">
   <defs>
     <linearGradient id="fbg" x1="0" y1="0" x2="1" y2="0">
-      <stop offset="0" stop-color="#160b2c"/>
-      <stop offset=".5" stop-color="#35115f"/>
-      <stop offset="1" stop-color="#771d68"/>
+      <stop offset="0" stop-color="#071324"/>
+      <stop offset=".5" stop-color="#0d315c"/>
+      <stop offset="1" stop-color="#1a5fb4"/>
     </linearGradient>
     <clipPath id="fclip">
       <rect width="1200" height="110" rx="18"/>
@@ -11,9 +11,9 @@
   </defs>
   <g clip-path="url(#fclip)">
     <rect width="1200" height="110" fill="url(#fbg)"/>
-    <path d="M0 42Q240 8 480 46T960 40T1200 30V110H0Z" fill="#a855f7" opacity=".18"/>
-    <path d="M0 68Q300 34 600 70T1200 58V110H0Z" fill="#f472b6" opacity=".14"/>
-    <text x="600" y="64" text-anchor="middle" font-family="Segoe UI,Inter,Arial,sans-serif" font-size="14" font-weight="600" letter-spacing="1.5" fill="#f3e8ff">
+    <path d="M0 42Q240 8 480 46T960 40T1200 30V110H0Z" fill="#38bdf8" opacity=".18"/>
+    <path d="M0 68Q300 34 600 70T1200 58V110H0Z" fill="#2dd4bf" opacity=".14"/>
+    <text x="600" y="64" text-anchor="middle" font-family="Segoe UI,Inter,Cantarell,Arial,sans-serif" font-size="14" font-weight="600" letter-spacing="1.5" fill="#e0f2fe">
       SMART DOWNLOAD MANAGER · BUILT WITH RUST &amp; SLINT
     </text>
   </g>
