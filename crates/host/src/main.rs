@@ -10,7 +10,7 @@ use std::process::{Command, Stdio};
 use std::time::Duration;
 
 const VERSION: &str = env!("CARGO_PKG_VERSION");
-const MAX_MESSAGE: usize = 32 << 20;
+const MAX_MESSAGE: usize = 1 << 20;
 
 fn read_message(r: &mut impl Read) -> std::io::Result<Option<Vec<u8>>> {
     let mut len = [0u8; 4];
@@ -29,8 +29,10 @@ fn read_message(r: &mut impl Read) -> std::io::Result<Option<Vec<u8>>> {
 }
 
 fn write_message(w: &mut impl Write, bytes: &[u8]) -> std::io::Result<()> {
-    w.write_all(&(bytes.len() as u32).to_le_bytes())?;
-    w.write_all(bytes)?;
+    let mut frame = Vec::with_capacity(4 + bytes.len());
+    frame.extend_from_slice(&(bytes.len() as u32).to_le_bytes());
+    frame.extend_from_slice(bytes);
+    w.write_all(&frame)?;
     w.flush()
 }
 
@@ -163,7 +165,8 @@ fn main() {
             }
             Err(e) => Reply::err(format!("bad message: {e}")),
         };
-        if write_message(&mut stdout, &serde_json::to_vec(&reply).unwrap()).is_err() {
+        if let Err(e) = write_message(&mut stdout, &serde_json::to_vec(&reply).unwrap()) {
+            log(&dir, &format!("write error: {e}"));
             break;
         }
     }

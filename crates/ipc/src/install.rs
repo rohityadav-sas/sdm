@@ -155,17 +155,25 @@ const COMMON_FILES: &[(&str, &[u8])] = bundled! {
 const MANIFEST_CHROMIUM: &[u8] = include_bytes!("../../../extension/manifest.chromium.json");
 const MANIFEST_FIREFOX: &[u8] = include_bytes!("../../../extension/manifest.firefox.json");
 
+fn write_if_changed(path: &Path, bytes: &[u8]) -> io::Result<()> {
+    if std::fs::read(path).map(|old| old == bytes).unwrap_or(false) {
+        return Ok(());
+    }
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent)?;
+    }
+    std::fs::write(path, bytes)
+}
+
 /// Write the two ready-to-load extension folders under `base`:
 /// `base/chromium` (Chrome, Edge, Brave, ...) and `base/firefox`.
 pub fn extract_extension(base: &Path) -> io::Result<(PathBuf, PathBuf)> {
     let out = |sub: &str, manifest: &[u8]| -> io::Result<PathBuf> {
         let dir = base.join(sub);
         for (name, bytes) in COMMON_FILES {
-            let p = dir.join(name);
-            std::fs::create_dir_all(p.parent().unwrap())?;
-            std::fs::write(p, bytes)?;
+            write_if_changed(&dir.join(name), bytes)?;
         }
-        std::fs::write(dir.join("manifest.json"), manifest)?;
+        write_if_changed(&dir.join("manifest.json"), manifest)?;
         Ok(dir)
     };
     Ok((out("chromium", MANIFEST_CHROMIUM)?, out("firefox", MANIFEST_FIREFOX)?))

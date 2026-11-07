@@ -11,7 +11,7 @@ use crate::{sys, DownloadItem, MainWindow, Theme};
 use engine::{CancellationToken, Info, Options, Outcome, RateLimiter};
 use slint::winit_030::{winit, WinitWindowAccessor};
 use slint::{CloseRequestResponse, ComponentHandle, Model, ModelRc, SharedString, Timer, TimerMode, VecModel, Weak};
-use std::cell::RefCell;
+use std::cell::{Cell, RefCell};
 use std::collections::VecDeque;
 use std::path::PathBuf;
 use std::rc::{Rc, Weak as RcWeak};
@@ -81,6 +81,10 @@ struct Item {
     finished: Option<u64>,
     task: Option<Arc<Task>>,
     headers: Vec<(String, String)>,
+    last_pushed_done: u64,
+    last_pushed_speed_fmt: String,
+    last_pushed_st: St,
+    last_pushed_active: usize,
 }
 
 struct Inner {
@@ -104,6 +108,7 @@ struct Inner {
     last_sample: Instant,
     me: RcWeak<RefCell<Inner>>,
     pending_update: Option<crate::update::UpdateInfo>,
+    last_win_size: Rc<Cell<(i32, i32)>>,
 }
 
 pub struct App {
@@ -181,19 +186,67 @@ impl Inner {
         self.items.iter().position(|i| i.id == id)
     }
 
-    fn push_row(&self, i: usize) {
-        self.model.set_row_data(i, to_row(&self.items[i]));
+    fn push_row(&mut self, i: usize) {
+        let it = &mut self.items[i];
+        let row = to_row(it);
+        it.last_pushed_done = it.done;
+        it.last_pushed_speed_fmt = row.speed.to_string();
+        it.last_pushed_st = it.st;
+        it.last_pushed_active = it.active;
+        self.model.set_row_data(i, row);
     }
 
-    fn refresh_stats(&self) {
-        let Some(ui) = self.ui.upgrade() else { return };
-        let speed: f64 = self.items.iter().filter(|i| i.st == St::Running && !i.pausing).map(|i| i.speed).sum();
-        ui.set_total_speed(fmt_speed(speed).into());
-        ui.set_active_count(self.items.iter().filter(|i| i.st == St::Running && !i.pausing).count() as i32);
-        ui.set_done_count(self.items.iter().filter(|i| i.st == St::Done).count() as i32);
-        ui.set_count_all(self.items.len() as i32);
-        ui.set_count_busy(self.items.iter().filter(|i| matches!(i.st, St::Running | St::Queued)).count() as i32);
-        ui.set_count_stopped(self.items.iter().filter(|i| matches!(i.st, St::Paused | St::Error)).count() as i32);
+    fn refresh_stats(&self) -> f64 {
+        let mut total_speed = 0.0f64;
+        let mut active = 0i32;
+        let mut done = 0i32;
+        let mut busy = 0i32;
+        let mut stopped = 0i32;
+        let all = self.items.len() as i32;
+
+        for it in &self.items {
+            match it.st {
+                St::Running => {
+                    if !it.pausing {
+                        total_speed += it.speed;
+                        active += 1;
+                    }
+                    busy += 1;
+                }
+                St::Queued => {
+                    busy += 1;
+                }
+                St::Done => {
+                    done += 1;
+                }
+                St::Paused | St::Error => {
+                    stopped += 1;
+                }
+            }
+        }
+
+        if let Some(ui) = self.ui.upgrade() {
+            let speed_str = fmt_speed(total_speed);
+            if ui.get_total_speed() != speed_str {
+                ui.set_total_speed(speed_str.into());
+            }
+            if ui.get_active_count() != active {
+                ui.set_active_count(active);
+            }
+            if ui.get_done_count() != done {
+                ui.set_done_count(done);
+            }
+            if ui.get_count_all() != all {
+                ui.set_count_all(all);
+            }
+            if ui.get_count_busy() != busy {
+                ui.set_count_busy(busy);
+            }
+            if ui.get_count_stopped() != stopped {
+                ui.set_count_stopped(stopped);
+            }
+        }
+        total_speed
     }
 
     fn ensure_tick(&self) {
@@ -221,9 +274,8 @@ impl Inner {
         });
     }
 
-    fn save_now(&self) {
-        let list: Vec<Saved> = self
-            .items
+    fn collect_saved(&self) -> Vec<Saved> {
+        self.items
             .iter()
             .map(|i| Saved {
                 id: i.id,
@@ -238,7 +290,19 @@ impl Inner {
                 finished: i.finished,
                 headers: i.headers.clone(),
             })
-            .collect();
+            .collect()
+    }
+
+    fn save_now(&self) {
+        let list = self.collect_saved();
+        let dir = self.cfg.data_dir.clone();
+        self.rt.spawn_blocking(move || {
+            store::save_history(&dir, &list);
+        });
+    }
+
+    fn save_sync(&self) {
+        let list = self.collect_saved();
         store::save_history(&self.cfg.data_dir, &list);
     }
 
@@ -337,6 +401,10 @@ impl Inner {
         let mut item = Item {
             id, url, name, dir, path: None, total: 0, done: 0, conns, st: St::Running, pausing: false, resume_after: false,
             speed: 0.0, last_done: 0, active: 0, err: String::new(), finished: None, task: None, headers,
+            last_pushed_done: 0,
+            last_pushed_speed_fmt: String::new(),
+            last_pushed_st: St::Running,
+            last_pushed_active: 0,
         };
         let queued = self.running_count() >= self.max_active();
         if queued {
@@ -391,6 +459,10 @@ impl Inner {
 
     fn raise(&mut self) {
         self.background = false;
+        for i in 0..self.items.len() {
+            self.push_row(i);
+        }
+        self.refresh_stats();
         if let Some(ui) = self.ui.upgrade() {
             ui.window().set_minimized(false);
             let _ = ui.show();
@@ -505,7 +577,7 @@ impl Inner {
     /// The window was closed: keep downloading in the background, or quit.
     fn on_window_close(&mut self) {
         let Some(ui) = self.ui.upgrade() else { return };
-        store::save_settings(&self.cfg.data_dir, &settings_from_ui(&ui, &self.cfg.data_dir));
+        store::save_settings(&self.cfg.data_dir, &settings_from_ui(&ui, &self.last_win_size));
         if ui.get_background_mode() && self.busy() {
             self.background = true;
             if ui.get_notifications() {
@@ -518,7 +590,7 @@ impl Inner {
 
     fn quit(&mut self) {
         if let Some(ui) = self.ui.upgrade() {
-            store::save_settings(&self.cfg.data_dir, &settings_from_ui(&ui, &self.cfg.data_dir));
+            store::save_settings(&self.cfg.data_dir, &settings_from_ui(&ui, &self.last_win_size));
         }
         self.shutdown();
         let _ = slint::quit_event_loop();
@@ -696,56 +768,83 @@ impl Inner {
 
         for i in 0..self.items.len() {
             let Some(t) = self.items[i].task.clone() else { continue };
-            let it = &mut self.items[i];
             let d = t.downloaded.load(Relaxed);
             let total = t.total.load(Relaxed);
-            if let Some(n) = t.name.lock().unwrap().clone() {
-                it.name = n;
-            }
-            if let Some(p) = t.path.lock().unwrap().clone() {
-                it.path = Some(p);
-            }
-            if total > 0 {
-                it.total = total;
-            }
-            let inst = d.saturating_sub(it.last_done) as f64 / dt;
-            it.speed = if it.speed < 1.0 { inst } else { 0.6 * it.speed + 0.4 * inst };
-            it.last_done = d;
-            it.done = d;
-            it.active = t.conns.load(Relaxed);
-            match t.state.load(Relaxed) {
-                RUNNING => {}
-                DONE => {
-                    it.st = St::Done;
-                    it.done = it.total.max(d);
-                    it.speed = 0.0;
-                    it.finished = Some(now_secs());
-                    it.task = None;
-                    it.pausing = false;
-                    finished.push(it.name.clone());
-                    changed = true;
+            let mut state_changed = false;
+            let mut name_to_finish = None;
+
+            {
+                let it = &mut self.items[i];
+                if it.path.is_none() {
+                    if let Some(n) = t.name.lock().unwrap().clone() {
+                        it.name = n;
+                    }
+                    if let Some(p) = t.path.lock().unwrap().clone() {
+                        it.path = Some(p);
+                    }
                 }
-                PAUSED => {
-                    it.st = if it.resume_after { St::Queued } else { St::Paused };
-                    it.resume_after = false;
-                    it.speed = 0.0;
-                    it.task = None;
-                    it.pausing = false;
-                    changed = true;
+                if total > 0 {
+                    it.total = total;
                 }
-                _ => {
-                    it.st = St::Error;
-                    it.err = t.err.lock().unwrap().clone();
-                    it.speed = 0.0;
-                    it.task = None;
-                    it.pausing = false;
-                    changed = true;
+                let inst = d.saturating_sub(it.last_done) as f64 / dt;
+                it.speed = if it.speed < 1.0 { inst } else { 0.6 * it.speed + 0.4 * inst };
+                it.last_done = d;
+                it.done = d;
+                it.active = t.conns.load(Relaxed);
+                match t.state.load(Relaxed) {
+                    RUNNING => {}
+                    DONE => {
+                        it.st = St::Done;
+                        it.done = it.total.max(d);
+                        it.speed = 0.0;
+                        it.finished = Some(now_secs());
+                        it.task = None;
+                        it.pausing = false;
+                        name_to_finish = Some(it.name.clone());
+                        changed = true;
+                        state_changed = true;
+                    }
+                    PAUSED => {
+                        it.st = if it.resume_after { St::Queued } else { St::Paused };
+                        it.resume_after = false;
+                        it.speed = 0.0;
+                        it.task = None;
+                        it.pausing = false;
+                        changed = true;
+                        state_changed = true;
+                    }
+                    _ => {
+                        it.st = St::Error;
+                        it.err = t.err.lock().unwrap().clone();
+                        it.speed = 0.0;
+                        it.task = None;
+                        it.pausing = false;
+                        changed = true;
+                        state_changed = true;
+                    }
                 }
             }
-            self.push_row(i);
+
+            if let Some(n) = name_to_finish {
+                finished.push(n);
+            }
+
+            let should_push = {
+                let it = &self.items[i];
+                let speed_str = fmt_speed(it.speed);
+                state_changed
+                    || it.st != it.last_pushed_st
+                    || it.active != it.last_pushed_active
+                    || speed_str != it.last_pushed_speed_fmt
+                    || (it.done.saturating_sub(it.last_pushed_done) >= 65536)
+                    || (it.total > 0 && ((it.done as f64 - it.last_pushed_done as f64) / (it.total as f64) >= 0.002))
+                    || it.task.is_none()
+            };
+            if should_push {
+                self.push_row(i);
+            }
         }
-        self.refresh_stats();
-        let total_speed: f64 = self.items.iter().filter(|i| i.st == St::Running && !i.pausing).map(|i| i.speed).sum();
+        let total_speed = self.refresh_stats();
         self.sample_speed(total_speed);
 
         let notify = self.ui.upgrade().map(|u| u.get_notifications()).unwrap_or(false);
@@ -804,11 +903,14 @@ impl Inner {
                 }
             }
         }
-        self.save_now();
+        self.save_sync();
     }
 
     fn schedule_update_check(&mut self) {
         if !self.cfg.ipc {
+            return;
+        }
+        if !crate::update::should_check_background(&self.cfg.data_dir) {
             return;
         }
         let me = self.me.clone();
@@ -818,6 +920,7 @@ impl Inner {
     }
 
     fn check_update_silent(&mut self) {
+        crate::update::touch_update_check(&self.cfg.data_dir);
         self.rt.spawn(async move {
             if let Ok(info) = crate::update::check_for_update(None).await {
                 if info.is_newer {
@@ -836,6 +939,7 @@ impl Inner {
     }
 
     fn check_update(&mut self) {
+        crate::update::touch_update_check(&self.cfg.data_dir);
         if let Some(ui) = self.ui.upgrade() {
             ui.set_update_state(1);
             ui.set_update_status("Checking for updates…".into());
@@ -923,11 +1027,17 @@ impl Inner {
     }
 }
 
-fn settings_from_ui(ui: &MainWindow, data_dir: &std::path::Path) -> Settings {
+fn settings_from_ui(ui: &MainWindow, last_win_size: &Cell<(i32, i32)>) -> Settings {
     let size = ui.window().size();
     let f = ui.window().scale_factor().max(0.5);
     let (w, h) = ((size.width as f32 / f) as i32, (size.height as f32 / f) as i32);
-    let prev = store::load_settings(data_dir);
+    let (prev_w, prev_h) = last_win_size.get();
+    let (window_width, window_height) = if w >= 760 && h >= 560 {
+        last_win_size.set((w, h));
+        (w, h)
+    } else {
+        (prev_w, prev_h)
+    };
     Settings {
         download_folder: ui.get_download_folder().to_string(),
         connections: ui.get_default_conns(),
@@ -939,8 +1049,8 @@ fn settings_from_ui(ui: &MainWindow, data_dir: &std::path::Path) -> Settings {
         keep_running: ui.get_background_mode(),
         system_titlebar: ui.get_system_titlebar(),
         // A minimised/hidden window reports a tiny size: keep the last good one.
-        window_width: if w >= 760 && h >= 560 { w } else { prev.window_width },
-        window_height: if w >= 760 && h >= 560 { h } else { prev.window_height },
+        window_width,
+        window_height,
     }
 }
 
@@ -1027,6 +1137,10 @@ impl App {
                 finished: s.finished,
                 task: None,
                 headers: s.headers.clone(),
+                last_pushed_done: s.done,
+                last_pushed_speed_fmt: String::new(),
+                last_pushed_st: if s.complete { St::Done } else { St::Paused },
+                last_pushed_active: 0,
             })
             .collect();
         let model = Rc::new(VecModel::from(items.iter().map(to_row).collect::<Vec<_>>()));
@@ -1050,6 +1164,7 @@ impl App {
             }
         });
 
+        let last_win_size = Rc::new(Cell::new((s.window_width, s.window_height)));
         let data_dir = cfg.data_dir.clone();
         let ipc_enabled = cfg.ipc;
         let inner = Rc::new_cyclic(|me| {
@@ -1072,6 +1187,7 @@ impl App {
                 last_sample: Instant::now(),
                 me: me.clone(),
                 pending_update: None,
+                last_win_size: last_win_size.clone(),
             })
         });
         inner.borrow().refresh_stats();
@@ -1181,12 +1297,12 @@ impl App {
         // Settings are saved a moment after the last change.
         let settings_timer = Rc::new(Timer::default());
         ui.on_settings_changed({
-            let (w, t, dir) = (ui.as_weak(), settings_timer.clone(), data_dir.clone());
+            let (w, t, dir, win_sz) = (ui.as_weak(), settings_timer.clone(), data_dir.clone(), last_win_size.clone());
             move || {
-                let (w, dir) = (w.clone(), dir.clone());
+                let (w, dir, win_sz) = (w.clone(), dir.clone(), win_sz.clone());
                 t.start(TimerMode::SingleShot, Duration::from_millis(400), move || {
                     let Some(ui) = w.upgrade() else { return };
-                    store::save_settings(&dir, &settings_from_ui(&ui, &dir));
+                    store::save_settings(&dir, &settings_from_ui(&ui, &win_sz));
                 });
             }
         });
